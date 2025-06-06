@@ -30,7 +30,7 @@ From an academic point of view this program is very attractive. You have an enor
 
 Elsewhere in the world of thought, people like Turing and Kleene were studying something very different - *computability*. Much like the logicians, they were interested in things that performed many small steps in succession, but rather than inference rules these steps were simple mathematical operations. These days we call devices that do this *computers*, and they are so familiar to us that it's hard to imagine a time where people had only just begun to conceive of them.
 
-Unlike the logicians, computer scientists *love* self-reference. Allowing programs to reference themselves (called *recursion* or *reification* depending on the context) is such a powerful technique for writing code that entire languages have been based around the idea, like Lisp. Here's an example of a self-referential program that computes the Fibonacci sequence:
+Unlike the logicians, computer scientists *love* self-reference. Allowing programs to reference themselves (called *recursion* or *reification* depending on the context) is such a powerful technique for writing code that entire languages have been based around the idea, like Lisp. For the completely uninitiated, here's an example of a self-referential program that computes the Fibonacci sequence:
 
 ```typescript
 // TODO: transpiler example
@@ -67,7 +67,7 @@ The proof of the incompleteness theorem is not actually that complicated when yo
 
 The basic idea is to show that certain questions about logic, like "is $\phi$ a valid proof of $\psi$ in this logic?", can be mechanically translated into questions about natural numbers, in such a way that the two questions are completely equivalent. By *mechanically* I just mean that there is a computer program that can do it, and by *equivalent* I mean that the answer to both questions must be exactly the same.
 
-This is already quite interesting, as it means that we can translate many questions about truth, proof and consistency into much simpler questions about number theory! At first glace you might be surprised that this is possible, but keep in mind that if you are a programmer your compiler does this all the time! A compiler takes some high-level code (like a Haskell program, for instance) and converts it into a low-level representation (such as machine code). The only difference here is that instead of machine code, Gödel uses number theory as his target architecture.
+This is already quite interesting, as it means that we can translate many questions about truth, proof and consistency into much simpler questions about number theory! At first glace you might be surprised that this is possible, but keep in mind that if you are a programmer your compiler does this all the time. A compiler takes some high-level code (like a Haskell program, for instance) and converts it into a low-level representation (such as machine code). The only difference here is that instead of machine code, Gödel uses number theory as his target architecture.
 
 To give you a flavour of what this looks like, you probably already know the following result (the *fundamental theorem of arithmetic*):
 
@@ -97,6 +97,29 @@ function decode(x: number): number[] {
 }
 console.log(decode(67500)); // [1, 2, 3]
 ```
+
+Because of the $\mathbb{(FTA)}$, this is guaranteed to work as an encoding for any finite string of bytes. But these examples are written in TypeScript - the real demonstration is to show that this codec can be represented as formulas of arithmetic as well. To keep our lives simple, I will be working with *first-order Peano Arithmetic*, a well-known logic for working with natural numbers.
+
+TODO: link to a good introduction to first-order logic, not the place to do it here
+
+The language of Peano Arithmetic consists of a constant $0$ (zero), a binary relation $=$ (equality), a unary function $S$ (the *successor function*) and two binary functions $+$ and $\cdot$ (addition and multiplication). In terms of axioms, there are six that ensure that all of these symbols behave the way you would expect from $\mathbb{N}$:
+
+1. $\forall x . \left( 0 \neq S(x) \right)$
+2. $\forall x, y . \left( S(x) = S(y) \implies x = y \right)$
+3. $\forall x . \left( x + 0 = x \right)$
+4. $\forall x, y . \left( x + S(y) = S(x + y) \right)$
+5. $\forall x . \left( x \cdot 0 = 0 \right)$
+6. $\forall x, y . \left( x \cdot S(y) = x \cdot y + x \right)$
+
+...as well as a few axioms ensuring that equality behaves correctly:
+
+7. $\forall \left( x . x = x \right)$
+8. $\forall x, y . \left( x = y \implies y = x \right)$
+9. $\forall x, y, z . \left( x = y \land y = z \implies x = z \right)$
+
+...and finally, it has an *axiom schema*, which is a fancy way of describing a computable, infinite *set* of axioms. This particular schema is called the *axiom schema of induction*:
+
+10. for every formula $\varphi(x)$ we have as an axiom $\left( \varphi(0) \land \forall x . \left( \varphi(x) \implies \varphi(S(x)) \right) \right) \implies \forall x . \varphi(x)$
 
 ## Usage
 
