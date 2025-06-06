@@ -61,6 +61,43 @@ The first point has, to my knowledge, not really panned out in any serious fashi
 
 The second point refers to things like *Gentzen's theorem*, which states that *Peano Arithmetic* (a logic for proving properties of natural numbers) is consistent, which requires the use of a second, more powerful logical system to actually implement the proof. You can prove that something is consistent like this, but you might still have doubts about the second system. To prove the second system consistent requires a third, and the third requires a fourth, and pretty soon it's turtles all the way down. This sort of infinite regress is very unsatisfactory as a model of mathematics.
 
+### Peano Arithmetic
+
+The proof of the incompleteness theorem is not actually that complicated when you get down to it, especially if you take some liberties (which I do here). As logicians, people like Gödel and Rosser worked hard to find the exact dividing line between completeness and incompleteness. This is a very interesting thing to do, but leads to a pretty difficult-to-read proof (not to mention that a lot of the terminology has since gone out of fashion).
+
+The basic idea is to show that certain questions about logic, like "is $\phi$ a valid proof of $\psi$ in this logic?", can be mechanically translated into questions about natural numbers, in such a way that the two questions are completely equivalent. By *mechanically* I just mean that there is a computer program that can do it, and by *equivalent* I mean that the answer to both questions must be exactly the same.
+
+This is already quite interesting, as it means that we can translate many questions about truth, proof and consistency into much simpler questions about number theory! At first glace you might be surprised that this is possible, but keep in mind that if you are a programmer your compiler does this all the time! A compiler takes some high-level code (like a Haskell program, for instance) and converts it into a low-level representation (such as machine code). The only difference here is that instead of machine code, Gödel uses number theory as his target architecture.
+
+To give you a flavour of what this looks like, you probably already know the following result (the *fundamental theorem of arithmetic*):
+
+- $\mathbf{(FTA)}$ every positive natural number has a unique prime factorisation
+
+Let's use this to construct a simple coding scheme for strings. Ignoring a lot of details, a string is basically a sequence of *bytes*, which can range in value from $0-255$. If the $i$-th byte of the string has value $v_i$, we associate it with the number $p_i^{1 + v_i}$, where $p_i$ is the $i$-th prime number. To encode the string, we simply take the product of all of the prime powers associated with each byte:
+
+```typescript
+const ps = [2, 3, 5, 7, 11, 13, 17, 19, 23];
+function encode(xs: number[]): number {
+  return xs.reduce((res, x, i) => res * ps[i]**(1 + x), 1);
+}
+console.log(encode([1, 2, 3])); // 67500 = 2**(1+1) * 3**(2+1) * 5**(3+1)
+```
+
+To decode these numbers you simply factorise the input and work out each byte's value in reverse:
+
+```typescript
+const ps = [2, 3, 5, 7, 11, 13, 17, 19, 23];
+function decode(x: number): number[] {
+  const res = [];
+  for (let i = 0; x > 1 && i < ps.length; i++) {
+    for (var cnt = 0; x%ps[i] == 0; (x /= ps[i], cnt++));
+    res.push(cnt ? cnt-1 : 0);
+  }
+  return res;
+}
+console.log(decode(67500)); // [1, 2, 3]
+```
+
 ## Usage
 
 Needs to be written when there's something to use.
