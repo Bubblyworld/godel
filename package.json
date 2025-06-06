@@ -1,0 +1,31 @@
+{
+  "name": "godel-typescript",
+  "version": "1.0.0",
+  "description": "A proof of Gödel's two incompleteness theorems, written in TypeScript",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "lint": "eslint src/**/*.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "godel",
+    "incompleteness",
+    "theorem",
+    "logic",
+    "mathematics",
+    "typescript"
+  ],
+  "author": "Guy Paterson-Jones",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "packageManager": "yarn@4.9.2"
+}
