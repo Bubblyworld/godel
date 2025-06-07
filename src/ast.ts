@@ -37,89 +37,6 @@ export type Formula =
   | { kind: NodeKind.Exists; vars: number[]; arg: Formula };
 
 /**
- * Types of symbols in a first-order language:
- */
-export const enum SymbolKind {
-  Var, // variable symbol x
-  Const, // constant symbol c
-  Fun, // function symbol f
-  Rel, // relation symbol R
-}
-
-/**
- * Represents a symbol table for a first-order context, which maps variables,
- * constants, functions and relations to their symbols and metadata. Uses symbols
- * instead of strings to guarantee uniqueness and protect against name collisions.
- */
-export type SymbolTable = {
-  vars: { symbol: symbol }[];
-  consts: { symbol: symbol }[];
-  funs: { symbol: symbol; arity: number }[];
-  rels: { symbol: symbol; arity: number }[];
-}
-
-/**
- * Represents a failure to resolve a symbol against a symbol table.
- */
-export class UnresolvedSymbolError extends Error {
-  constructor(
-    public readonly kind: SymbolKind,
-    public readonly idx: number,
-    public readonly st: SymbolTable,
-  ) {
-    super(`symbol ${kind}/${idx} could not be resolved in the given symbol table`);
-  }
-}
-
-/**
- * Represents a use of a function or relation symbol with invalid arity.
- */
-export class InvalidSymbolArityError extends Error {
-  constructor(
-    public readonly kind: SymbolKind.Fun | SymbolKind.Rel,
-    public readonly idx: number,
-    public readonly arity: number,
-    public readonly st: SymbolTable,
-  ) {
-    let name = '';
-    try {
-      name = `(${resolve(kind as any, idx, st).symbol.description ?? ''}) `;
-    } catch (err) {
-      if (!(err instanceof UnresolvedSymbolError)) {
-        throw err;
-      }
-    }
-    super(`symbol ${kind}/${idx} ${name}was used with arity ${arity} which does not match symbol table`);
-  }
-}
-
-/**
- * Resolves a symbol against a symbol table and throws if it's not found.
- */
-export function resolve(kind: SymbolKind.Var, idx: number, st: SymbolTable): SymbolTable['vars'][number];
-export function resolve(kind: SymbolKind.Const, idx: number, st: SymbolTable): SymbolTable['consts'][number];
-export function resolve(kind: SymbolKind.Fun, idx: number, st: SymbolTable): SymbolTable['funs'][number];
-export function resolve(kind: SymbolKind.Rel, idx: number, st: SymbolTable): SymbolTable['rels'][number];
-export function resolve(kind: SymbolKind, idx: number, st: SymbolTable): SymbolTable[keyof SymbolTable][number] {
-  let res: SymbolTable[keyof SymbolTable][number] | undefined;
-  switch(kind) {
-    case SymbolKind.Var: res = st.vars[idx]; break;
-    case SymbolKind.Const: res = st.consts[idx]; break;
-    case SymbolKind.Fun: res = st.funs[idx]; break;
-    case SymbolKind.Rel: res = st.rels[idx]; break;
-    default:
-      const _exhaustive: never = kind;
-      throw new Error(_exhaustive);
-  }
-
-  if (res == null) {
-    throw new UnresolvedSymbolError(kind, idx, st);
-  } else {
-    return res;
-  }
-}
-
-/**
  * Helper for traversing formulas:
  */
 export function visit<T>(
@@ -151,6 +68,151 @@ export function visit<T>(
     default:
       const _exhaustive: never = f;
       throw new Error(_exhaustive);
+  }
+}
+
+/**
+ * Types of symbols in a first-order language:
+ */
+export const enum SymbolKind {
+  Var, // variable symbol x
+  Const, // constant symbol c
+  Fun, // function symbol f
+  Rel, // relation symbol R
+}
+
+/**
+ * Represents an entry in a symbol table.
+ */
+export type SymbolEntry = 
+  | { kind: SymbolKind.Var; symbol: symbol; idx: number }
+  | { kind: SymbolKind.Const; symbol: symbol; idx: number }
+  | { kind: SymbolKind.Fun; symbol: symbol; arity: number; idx: number }
+  | { kind: SymbolKind.Rel; symbol: symbol; arity: number; idx: number };
+
+
+/**
+ * Represents a symbol table for a first-order context, which maps variables,
+ * constants, functions and relations to their symbols and metadata. Uses symbols
+ * instead of strings to guarantee uniqueness and protect against name collisions.
+ */
+export type SymbolTable = {
+  vars: (SymbolEntry & { kind: SymbolKind.Var })[];
+  consts: (SymbolEntry & { kind: SymbolKind.Const })[];
+  funs: (SymbolEntry & { kind: SymbolKind.Fun })[];
+  rels: (SymbolEntry & { kind: SymbolKind.Rel })[];
+  varToIdx: Map<symbol, number>;
+  constToIdx: Map<symbol, number>;
+  funToIdx: Map<symbol, number>;
+  relToIdx: Map<symbol, number>;
+}
+
+/**
+ * Represents a failure to resolve a symbol against a symbol table.
+ */
+export class UnresolvedSymbolError extends Error {
+  public readonly kindOrSymbol: symbol | SymbolKind;
+  public readonly idxOrSt: SymbolTable | number;
+  public readonly st: SymbolTable | undefined;
+
+  constructor(sym: symbol, st: SymbolTable);
+  constructor(kind: SymbolKind, idx: number, st: SymbolTable);
+  constructor(
+    kindOrSymbol: symbol | SymbolKind,
+    idxOrSt: SymbolTable | number,
+    st?: SymbolTable,
+  ) {
+    if (typeof kindOrSymbol === 'symbol') {
+      super(`symbol '${(kindOrSymbol as symbol).description}' could not be resolved in the given symbol table`);
+    } else {
+      super(`symbol ${kindOrSymbol as SymbolKind}/${idxOrSt as number} could not be found in the given symbol table`);
+    }
+    
+    this.kindOrSymbol = kindOrSymbol;
+    this.idxOrSt = idxOrSt;
+    this.st = st;
+  }
+}
+
+/**
+ * Represents a use of a function or relation symbol with invalid arity.
+ */
+export class InvalidSymbolArityError extends Error {
+  constructor(
+    public readonly kind: SymbolKind.Fun | SymbolKind.Rel,
+    public readonly idx: number,
+    public readonly arity: number,
+    public readonly st: SymbolTable,
+  ) {
+    let name = '';
+    try {
+      name = `(${resolve(kind as any, idx, st).symbol.description ?? ''}) `;
+    } catch (err) {
+      if (!(err instanceof UnresolvedSymbolError)) {
+        throw err;
+      }
+    }
+    super(`symbol ${kind}/${idx} ${name}was used with arity ${arity} which does not match symbol table`);
+  }
+}
+
+/**
+ * Resolves a symbol against a symbol table and throws if it's not found.
+ */
+export function resolve(kind: SymbolKind.Var, idx: number, st: SymbolTable): SymbolEntry & { kind: SymbolKind.Var };
+export function resolve(kind: SymbolKind.Const, idx: number, st: SymbolTable): SymbolEntry & { kind: SymbolKind.Const };
+export function resolve(kind: SymbolKind.Fun, idx: number, st: SymbolTable): SymbolEntry & { kind: SymbolKind.Fun };
+export function resolve(kind: SymbolKind.Rel, idx: number, st: SymbolTable): SymbolEntry & { kind: SymbolKind.Rel };
+export function resolve(symbol: symbol, st: SymbolTable): SymbolEntry;
+export function resolve(
+  kindOrSymbol: SymbolKind | symbol,
+  idxOrSt: number | SymbolTable,
+  st?: SymbolTable,
+): SymbolEntry {
+  if (typeof kindOrSymbol === 'symbol') {
+    const st = idxOrSt as SymbolTable;
+    
+    const varIdx = st.varToIdx.get(kindOrSymbol);
+    if (varIdx !== undefined) {
+      return st.vars[varIdx]!;
+    }
+    
+    const constIdx = st.constToIdx.get(kindOrSymbol);
+    if (constIdx !== undefined) {
+      return st.consts[constIdx]!;
+    }
+    
+    const funIdx = st.funToIdx.get(kindOrSymbol);
+    if (funIdx !== undefined) {
+      return st.funs[funIdx]!;
+    }
+    
+    const relIdx = st.relToIdx.get(kindOrSymbol);
+    if (relIdx !== undefined) {
+      return st.rels[relIdx]!;
+    }
+
+    throw new UnresolvedSymbolError(kindOrSymbol, st);
+  }
+  
+  const kind = kindOrSymbol as SymbolKind;
+  const idx = idxOrSt as number;
+  
+  let res: SymbolEntry | undefined;
+  switch(kind) {
+    case SymbolKind.Var: res = st!.vars[idx]; break;
+    case SymbolKind.Const: res = st!.consts[idx]; break;
+    case SymbolKind.Fun: res = st!.funs[idx]; break;
+    case SymbolKind.Rel: res = st!.rels[idx]; break;
+    default:
+      const _exhaustive: never = kind;
+      throw new Error(_exhaustive);
+  }
+
+  if (res == null) {
+    throw new UnresolvedSymbolError(kind, idx, st!);
+  } else {
+    return res;
   }
 }
 
@@ -195,4 +257,89 @@ export function render(
   });
 
   return _render(f);
+}
+
+/**
+ * Creates an empty symbol table with initialized caching maps.
+ */
+export function createSymbolTable(): SymbolTable {
+  return {
+    vars: [],
+    consts: [],
+    funs: [],
+    rels: [],
+    varToIdx: new Map(),
+    constToIdx: new Map(),
+    funToIdx: new Map(),
+    relToIdx: new Map(),
+  };
+}
+
+/**
+ * Add a symbol to the given symbol table. If the symbol is already present
+ * the existing entry is returned. If the symbol is already present but does
+ * not match the provided inputs then this throws.
+ */
+export function add(st: SymbolTable, kind: SymbolKind.Var, symbol: symbol): SymbolEntry & { kind: SymbolKind.Var };
+export function add(st: SymbolTable, kind: SymbolKind.Const, symbol: symbol): SymbolEntry & { kind: SymbolKind.Const };
+export function add(st: SymbolTable, kind: SymbolKind.Fun, symbol: symbol, arity: number): SymbolEntry & { kind: SymbolKind.Fun };
+export function add(st: SymbolTable, kind: SymbolKind.Rel, symbol: symbol, arity: number): SymbolEntry & { kind: SymbolKind.Rel };
+export function add(
+  st: SymbolTable, 
+  kind: SymbolKind, 
+  symbol: symbol, 
+  arity?: number
+): SymbolEntry {
+  try {
+    const existing = resolve(symbol, st);
+    if (existing.kind !== kind) {
+      throw new Error(`expected symbol '${symbol.description}' to have kind ${existing.kind}`);
+    }
+    if (existing.kind === SymbolKind.Fun || existing.kind === SymbolKind.Rel) {
+      if (arity == null || arity != existing.arity) {
+        throw new Error(`expected symbol '${symbol.description}' to have arity ${existing.arity}`);
+      }
+    }
+    return existing;
+  } catch (err) {
+    if (!(err instanceof UnresolvedSymbolError)) {
+      throw err;
+    }
+  }
+
+  switch(kind) {
+    case SymbolKind.Var: {
+      const entry = { kind, symbol, idx: st.vars.length };
+      st.vars.push(entry);
+      st.varToIdx.set(symbol, entry.idx);
+      return entry;
+    }
+    case SymbolKind.Const: {
+      const entry = { kind, symbol, idx: st.consts.length };
+      st.consts.push(entry);
+      st.constToIdx.set(symbol, entry.idx);
+      return entry;
+    }
+    case SymbolKind.Fun: {
+      if (arity == null) {
+        throw new Error(`expected symbol of kind '${kind}' to have an arity`);
+      }
+      const entry = { kind, symbol, arity, idx: st.funs.length };
+      st.funs.push(entry);
+      st.funToIdx.set(symbol, entry.idx);
+      return entry;
+    }
+    case SymbolKind.Rel: {
+      if (arity == null) {
+        throw new Error(`expected symbol of kind '${kind}' to have an arity`);
+      }
+      const entry = { kind, symbol, arity, idx: st.rels.length };
+      st.rels.push(entry);
+      st.relToIdx.set(symbol, entry.idx);
+      return entry;
+    }
+    default:
+      const _exhaustive: never = kind;
+      throw new Error(_exhaustive);
+  }
 }

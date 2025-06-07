@@ -4,41 +4,23 @@ import {
   SymbolKind,
   type Term,
   type Formula,
-  type SymbolTable,
   resolve,
   render,
   UnresolvedSymbolError,
   InvalidSymbolArityError,
+  createSymbolTable,
+  add,
 } from './ast';
 
-function createVar(name: string): SymbolTable['vars'][number] {
-  return { symbol: Symbol(name) };
-}
-
-function createConst(name: string): SymbolTable['consts'][number] {
-  return { symbol: Symbol(name) };
-}
-
-function createFun(name: string, arity: number): SymbolTable['funs'][number] {
-  return { symbol: Symbol(name), arity };
-}
-
-function createRel(name: string, arity: number): SymbolTable['rels'][number] {
-  return { symbol: Symbol(name), arity };
-}
-
-const st: SymbolTable = {
-  vars  : [createVar('x'), createVar('y'), createVar('z')],
-  consts: [createConst('c')],
-  funs  : [
-    createFun('f', 2),   // idx = 0
-    createFun('g', 1),   // idx = 1
-  ],
-  rels  : [
-    createRel('R', 2),   // idx = 0
-    createRel('S', 1),   // idx = 1
-  ],
-};
+const st = createSymbolTable();
+const xSym = add(st, SymbolKind.Var, Symbol('x'));
+const ySym = add(st, SymbolKind.Var, Symbol('y'));
+const zSym = add(st, SymbolKind.Var, Symbol('z'));
+const cSym = add(st, SymbolKind.Const, Symbol('c'));
+const fSym = add(st, SymbolKind.Fun, Symbol('f'), 2);
+const gSym = add(st, SymbolKind.Fun, Symbol('g'), 1);
+const RSym = add(st, SymbolKind.Rel, Symbol('R'), 2);
+const SSym = add(st, SymbolKind.Rel, Symbol('S'), 1);
 
 const v = (i: number): Term => ({ kind: NodeKind.Var, idx: i });
 const c = (i: number): Term => ({ kind: NodeKind.Const, idx: i });
@@ -49,6 +31,87 @@ const atom = (i: number, ...args: Term[]): Formula =>
   ({ kind: NodeKind.Atom, idx: i, args });
 
 describe('ast.ts', () => {
+  describe('Symbol table caching', () => {
+    it('creates an empty symbol table', () => {
+      const emptySt = createSymbolTable();
+      expect(emptySt.vars).to.have.length(0);
+      expect(emptySt.consts).to.have.length(0);
+      expect(emptySt.funs).to.have.length(0);
+      expect(emptySt.rels).to.have.length(0);
+      expect(emptySt.varToIdx.size).to.equal(0);
+      expect(emptySt.constToIdx.size).to.equal(0);
+      expect(emptySt.funToIdx.size).to.equal(0);
+      expect(emptySt.relToIdx.size).to.equal(0);
+    });
+
+    it('adds symbols with correct indices', () => {
+      expect(xSym.idx).to.equal(0);
+      expect(ySym.idx).to.equal(1);
+      expect(zSym.idx).to.equal(2);
+      expect(cSym.idx).to.equal(0);
+      expect(fSym.idx).to.equal(0);
+      expect(gSym.idx).to.equal(1);
+      expect(RSym.idx).to.equal(0);
+      expect(SSym.idx).to.equal(1);
+    });
+
+    it('resolves symbols in O(1) time', () => {
+      expect(resolve(xSym.symbol, st).idx).to.equal(0);
+      expect(resolve(ySym.symbol, st).idx).to.equal(1);
+      expect(resolve(zSym.symbol, st).idx).to.equal(2);
+      expect(resolve(cSym.symbol, st).idx).to.equal(0);
+      expect(resolve(fSym.symbol, st).idx).to.equal(0);
+      expect(resolve(gSym.symbol, st).idx).to.equal(1);
+      expect(resolve(RSym.symbol, st).idx).to.equal(0);
+      expect(resolve(SSym.symbol, st).idx).to.equal(1);
+    });
+
+    it('resolves symbols with correct kinds', () => {
+      expect(resolve(xSym.symbol, st).kind).to.equal(SymbolKind.Var);
+      expect(resolve(cSym.symbol, st).kind).to.equal(SymbolKind.Const);
+      expect(resolve(fSym.symbol, st).kind).to.equal(SymbolKind.Fun);
+      expect(resolve(RSym.symbol, st).kind).to.equal(SymbolKind.Rel);
+    });
+
+    it('throws for unknown symbols', () => {
+      const unknownSym = Symbol('unknown');
+      expect(() => resolve(unknownSym, st)).to.throw(UnresolvedSymbolError);
+    });
+
+    it('throws error when arity is missing for function/relation', () => {
+      const testSt = createSymbolTable();
+      expect(() => (add as any)(testSt, SymbolKind.Fun, Symbol('test'))).to.throw("expected symbol of kind '2' to have an arity");
+      expect(() => (add as any)(testSt, SymbolKind.Rel, Symbol('test'))).to.throw("expected symbol of kind '3' to have an arity");
+    });
+
+    it('handles duplicate symbols correctly', () => {
+      const testSt = createSymbolTable();
+      const sym = Symbol('duplicate');
+      
+      // Add the same symbol twice - should return same index
+      const first = add(testSt, SymbolKind.Var, sym);
+      const second = add(testSt, SymbolKind.Var, sym);
+      expect(first.idx).to.equal(second.idx);
+      expect(testSt.vars).to.have.length(1);
+    });
+
+    it('throws error when adding symbol with different kind', () => {
+      const testSt = createSymbolTable();
+      const sym = Symbol('conflict');
+      
+      add(testSt, SymbolKind.Var, sym);
+      expect(() => add(testSt, SymbolKind.Const, sym)).to.throw();
+    });
+
+    it('throws error when adding function with different arity', () => {
+      const testSt = createSymbolTable();
+      const sym = Symbol('conflict');
+      
+      add(testSt, SymbolKind.Fun, sym, 2);
+      expect(() => add(testSt, SymbolKind.Fun, sym, 3)).to.throw();
+    });
+  });
+
   describe('resolve()', () => {
     it('resolves every kind correctly', () => {
       expect(resolve(SymbolKind.Var  , 2, st).symbol.description).to.equal('z');
@@ -64,21 +127,18 @@ describe('ast.ts', () => {
   });
 
   describe('render()', () => {
-    /* Build the formula:
-     *   ∀x. ( R(x, f(x, g(c))) → ∃y. S(g(y)) )
-     */
-
-    const termFxgC   = f(0, v(0), f(1, c(0)));         // f(x, g(c))
-    const phiLeft    = atom(0, v(0), termFxgC);        // R(x, f(x, g(c)))
+    // ∀x. ( R(x, f(x, g(c))) → ∃y. S(g(y)) )
+    const termFxgC   = f(0, v(0), f(1, c(0)));
+    const phiLeft    = atom(0, v(0), termFxgC);
     const phiRight   = {
       kind: NodeKind.Exists,
-      vars: [1],                                       // y
-      arg : atom(1, f(1, v(1))),                       // S(g(y))
+      vars: [1],
+      arg : atom(1, f(1, v(1))),
     } as Formula;
 
     const full: Formula = {
       kind: NodeKind.ForAll,
-      vars: [0],                                       // x
+      vars: [0],
       arg : {
         kind : NodeKind.Implies,
         left : phiLeft,
