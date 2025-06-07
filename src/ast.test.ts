@@ -10,6 +10,7 @@ import {
   InvalidSymbolArityError,
   createSymbolTable,
   add,
+  construct,
 } from './ast';
 
 const st = createSymbolTable();
@@ -161,6 +162,139 @@ describe('ast.ts', () => {
     it('throws InvalidSymbolArityError on arity mismatch (relation)', () => {
       const bad: Formula = { kind: NodeKind.Atom, idx: 1, args: [] }; // S with 0 args
       expect(() => render(bad, st)).to.throw(InvalidSymbolArityError);
+    });
+  });
+
+  describe('construct()', () => {
+    it('creates variables and constants ergonomically', () => {
+      const formula = construct(st, ({ var: v, const: c }) => {
+        return v(xSym.symbol);
+      });
+      
+      expect(formula.kind).to.equal(NodeKind.Var);
+      expect(formula.idx).to.equal(0);
+    });
+
+    it('creates function applications with arity checking', () => {
+      const term = construct(st, ({ var: v, func: f }) => {
+        return f(fSym.symbol, v(xSym.symbol), v(ySym.symbol));
+      });
+      
+      expect(term.kind).to.equal(NodeKind.FunApp);
+      expect(term.idx).to.equal(0); // f is at index 0
+      expect(term.args).to.have.length(2);
+      expect(term.args[0]!.kind).to.equal(NodeKind.Var);
+      expect(term.args[1]!.kind).to.equal(NodeKind.Var);
+    });
+
+    it('creates atomic formulas with arity checking', () => {
+      const formula = construct(st, ({ var: v, atom: a }) => {
+        return a(RSym.symbol, v(xSym.symbol), v(ySym.symbol));
+      });
+      
+      expect(formula.kind).to.equal(NodeKind.Atom);
+      expect(formula.idx).to.equal(0); // R is at index 0
+      expect(formula.args).to.have.length(2);
+    });
+
+    it('creates complex formulas with logical connectives', () => {
+      const formula = construct(st, ({ var: v, atom: a, and, or, not, implies }) => {
+        const atom1 = a(RSym.symbol, v(xSym.symbol), v(ySym.symbol));
+        const atom2 = a(SSym.symbol, v(xSym.symbol));
+        
+        return implies(
+          and(atom1, not(atom2)),
+          or(atom1, atom2)
+        );
+      });
+      
+      expect(formula.kind).to.equal(NodeKind.Implies);
+      expect(formula.left.kind).to.equal(NodeKind.And);
+      expect(formula.right.kind).to.equal(NodeKind.Or);
+      
+      // Check the nested structure
+      const leftSide = formula.left as Formula & { kind: NodeKind.And };
+      expect(leftSide.left.kind).to.equal(NodeKind.Atom);
+      expect(leftSide.right.kind).to.equal(NodeKind.Not);
+    });
+
+    it('creates quantified formulas', () => {
+      const formula = construct(st, ({ var: v, atom: a, forall, exists }) => {
+        const innerFormula = a(RSym.symbol, v(xSym.symbol), v(ySym.symbol));
+        
+        return forall([xSym.symbol], 
+          exists([ySym.symbol], innerFormula)
+        );
+      });
+      
+      expect(formula.kind).to.equal(NodeKind.ForAll);
+      expect(formula.vars).to.deep.equal([0]); // x is at index 0
+      
+      const existsFormula = formula.arg as Formula & { kind: NodeKind.Exists };
+      expect(existsFormula.kind).to.equal(NodeKind.Exists);
+      expect(existsFormula.vars).to.deep.equal([1]); // y is at index 1
+      expect(existsFormula.arg.kind).to.equal(NodeKind.Atom);
+    });
+
+    it('creates the same complex formula as in render test', () => {
+      // Build: ∀x. ( R(x, f(x, g(c))) → ∃y. S(g(y)) )
+      const formula = construct(st, ({ var: v, const: c, func: f, atom: a, forall, exists, implies }) => {
+        const x = v(xSym.symbol);
+        const y = v(ySym.symbol);
+        const constC = c(cSym.symbol);
+        
+        const gOfC = f(gSym.symbol, constC);
+        const fOfXgC = f(fSym.symbol, x, gOfC);
+        const RxfxgC = a(RSym.symbol, x, fOfXgC);
+        
+        const gOfY = f(gSym.symbol, y);
+        const SgY = a(SSym.symbol, gOfY);
+        
+        return forall([xSym.symbol],
+          implies(RxfxgC, 
+            exists([ySym.symbol], SgY)
+          )
+        );
+      });
+      
+      expect(render(formula, st)).to.equal('(∀x.(R(x, f(x, g(c)))→(∃y.S(g(y)))))');
+    });
+
+    it('throws error for symbol type conflicts', () => {
+      expect(() => construct(st, ({ var: v }) => {
+        return v(cSym.symbol); // trying to use constant as variable
+      })).to.throw(); // add() will throw about kind mismatch
+      
+      expect(() => construct(st, ({ const: c }) => {
+        return c(xSym.symbol); // trying to use variable as constant  
+      })).to.throw(); // add() will throw about kind mismatch
+    });
+
+    it('throws error for arity conflicts with existing symbols', () => {
+      expect(() => construct(st, ({ var: v, func: f }) => {
+        return f(fSym.symbol, v(xSym.symbol)); // f already exists with arity 2, trying to use with 1
+      })).to.throw(); // add() will throw about arity mismatch
+    });
+
+    it('throws error for arity conflicts with relations', () => {
+      expect(() => construct(st, ({ var: v, atom: a }) => {
+        return a(RSym.symbol, v(xSym.symbol)); // R already exists with arity 2, trying to use with 1
+      })).to.throw(); // add() will throw about arity mismatch
+    });
+
+    it('can add new symbols dynamically during construction', () => {
+      const testSt = createSymbolTable();
+      const newVar = Symbol('newVar');
+      const newFunc = Symbol('newFunc');
+      
+      const formula = construct(testSt, ({ var: v, func: f }) => {
+        return f(newFunc, v(newVar)); // both symbols will be added automatically
+      });
+      
+      expect(formula.kind).to.equal(NodeKind.FunApp);
+      expect(testSt.vars).to.have.length(1);
+      expect(testSt.funs).to.have.length(1);
+      expect(testSt.funs[0]!.arity).to.equal(1); // arity inferred from usage
     });
   });
 });

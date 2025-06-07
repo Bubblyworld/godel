@@ -1,5 +1,7 @@
 # Gödel Meets TypeScript
 
+![squirrel](https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ftse3.mm.bing.net%2Fth%3Fid%3DOIP.qnOXFFvpzh4ArqV2NuqF5gHaE8%26pid%3DApi&f=1&ipt=265c16d4a7f965b9255a8ff3bd8f0d6d6e7236617f83d3d643c36b4ae595e1ee&ipo=images)
+
 This repo contains a proof of Gödel's two incompleteness theorems, written in TypeScript. If you already know what that means and just want to see what this thing does, skip to [usage](#usage). Otherwise, read the [background](#background) first for a somewhat fictitious account of the history of these two theorems.
 
 ## Quickstart
@@ -16,7 +18,7 @@ The advantage of these systems is that they are simple enough to reason about, w
 
 It's hard to overstate what a magic trick this would be. The ability for a logic to represent *itself* and prove *itself* consistent would be to tame a fractal nightmare of self-referential logical chaos. Think of simple puzzles like the liar's paradox:
 
-- This sentence is false.
+- $\mathbb{(LP)}$ This sentence is false.
 
 It's not hard to see that this sentence cannot have a truth value. If it's true then it's false, and if it's false then it's true. Allowing statements to refer to themselves is a *really* bad idea if you want a provably-consistent logic, because you need to have answers to internal versions of these paradoxes. And they get *much* worse than this one.
 
