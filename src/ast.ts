@@ -343,3 +343,53 @@ export function add(
       throw new Error(_exhaustive);
   }
 }
+
+export type NodeConstructor<T> = (fns: {
+  var: (sym: symbol) => Term & { kind: NodeKind.Var };
+  const: (sym: symbol) => Term & { kind: NodeKind.Const };
+  func: (sym: symbol, ...args: Term[]) => Term & { kind: NodeKind.FunApp };
+  atom: (sym: symbol, ...args: Term[]) => Formula & { kind: NodeKind.Atom };
+  not: (arg: Formula) => Formula & { kind: NodeKind.Not };
+  and: (left: Formula, right: Formula) => Formula & { kind: NodeKind.And };
+  or: (left: Formula, right: Formula) => Formula & { kind: NodeKind.Or };
+  implies: (left: Formula, right: Formula) => Formula & { kind: NodeKind.Implies };
+  forall: (vars: symbol[], arg: Formula) => Formula & { kind: NodeKind.ForAll };
+  exists: (vars: symbol[], arg: Formula) => Formula & { kind: NodeKind.Exists };
+}) => T;
+
+/**
+ * Higher-level constructor for AST nodes that works with Symbols natively
+ * and automatically handles the symbol table for you.
+ */
+export function construct<T>(st: SymbolTable, nc: NodeConstructor<T>): T {
+  return nc({
+    var: (sym: symbol) => {
+      const entry = add(st, SymbolKind.Var, sym);
+      return { kind: NodeKind.Var, idx: entry.idx };
+    },
+    const: (sym: symbol) => {
+      const entry = add(st, SymbolKind.Const, sym);
+      return { kind: NodeKind.Const, idx: entry.idx };
+    },
+    func: (sym: symbol, ...args: Term[]) => {
+      const entry = add(st, SymbolKind.Fun, sym, args.length);
+      return { kind: NodeKind.FunApp, idx: entry.idx, args };
+    },
+    atom: (sym: symbol, ...args: Term[]) => {
+      const entry = add(st, SymbolKind.Rel, sym, args.length);
+      return { kind: NodeKind.Atom, idx: entry.idx, args };
+    },
+    not: (arg: Formula) => ({ kind: NodeKind.Not, arg }),
+    and: (left: Formula, right: Formula) => ({ kind: NodeKind.And, left, right }),
+    or: (left: Formula, right: Formula) => ({ kind: NodeKind.Or, left, right }),
+    implies: (left: Formula, right: Formula) => ({ kind: NodeKind.Implies, left, right }),
+    forall: (vars: symbol[], arg: Formula) => {
+      const varIndices = vars.map(sym => add(st, SymbolKind.Var, sym).idx);
+      return { kind: NodeKind.ForAll, vars: varIndices, arg };
+    },
+    exists: (vars: symbol[], arg: Formula) => {
+      const varIndices = vars.map(sym => add(st, SymbolKind.Var, sym).idx);
+      return { kind: NodeKind.Exists, vars: varIndices, arg };
+    },
+  });
+}
