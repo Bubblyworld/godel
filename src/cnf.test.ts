@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { construct, createSymbolTable, NodeKind, render } from "./ast";
-import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd } from './cnf';
+import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers } from './cnf';
 
 describe('cnf.ts', () => {
   it('should convert implications to disjunctions', () => {
@@ -561,6 +561,278 @@ describe('cnf.ts', () => {
         expect(g.left.kind).to.equal(NodeKind.Atom);
         expect(g.right.kind).to.equal(NodeKind.Atom);
       }
+    });
+  });
+
+  // Tests for freshenQuantifiers
+  describe('freshenQuantifiers', () => {
+    it('should leave formulas with no quantifiers unchanged', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ R(b)
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.atom(R, builder.const(b))
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+
+    it('should leave formulas with unique quantified variables unchanged', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃y R(x, y)
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([y], 
+            builder.atom(R, builder.var(x), builder.var(y))
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+
+    it('should rename conflicting variables in nested quantifiers', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test ∀x (R(x) ∧ ∃x S(x)) - inner x should be renamed
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.and(
+            builder.atom(R, builder.var(x)),
+            builder.exists([x], builder.atom(S, builder.var(x)))
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      
+      // The outer structure should be ForAll
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.And);
+        if (g.arg.kind === NodeKind.And) {
+          expect(g.arg.right.kind).to.equal(NodeKind.Exists);
+          if (g.arg.right.kind === NodeKind.Exists) {
+            // The inner quantifier should have a different variable index
+            expect(g.arg.right.vars[0]).to.not.equal(g.vars[0]);
+          }
+        }
+      }
+    });
+
+    it('should handle multiple conflicting variables in the same quantifier', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∀y (R(x, y) ∧ ∃x ∃y R(x, y)) - both inner variables should be renamed
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.forall([y], 
+            builder.and(
+              builder.atom(R, builder.var(x), builder.var(y)),
+              builder.exists([x, y], builder.atom(R, builder.var(x), builder.var(y)))
+            )
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.ForAll);
+        if (g.arg.kind === NodeKind.ForAll) {
+          expect(g.arg.arg.kind).to.equal(NodeKind.And);
+          if (g.arg.arg.kind === NodeKind.And) {
+            expect(g.arg.arg.right.kind).to.equal(NodeKind.Exists);
+            if (g.arg.arg.right.kind === NodeKind.Exists) {
+              // Both inner variables should be different from outer ones
+              const outerXIdx = g.vars[0];
+              const outerYIdx = g.arg.vars[0];
+              const innerXIdx = g.arg.arg.right.vars[0];
+              const innerYIdx = g.arg.arg.right.vars[1];
+              
+              expect(innerXIdx).to.not.equal(outerXIdx);
+              expect(innerYIdx).to.not.equal(outerYIdx);
+            }
+          }
+        }
+      }
+    });
+
+    it('should handle deep nesting with multiple conflicts', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃x ∀x R(x) - each subsequent x should be renamed
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([x], 
+            builder.forall([x], 
+              builder.atom(R, builder.var(x))
+            )
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      
+      // Extract all variable indices
+      const extractVarIndices = (f: any): number[] => {
+        if (f.kind === NodeKind.ForAll || f.kind === NodeKind.Exists) {
+          return [...f.vars, ...extractVarIndices(f.arg)];
+        } else if (f.arg) {
+          return extractVarIndices(f.arg);
+        } else if (f.left && f.right) {
+          return [...extractVarIndices(f.left), ...extractVarIndices(f.right)];
+        }
+        return [];
+      };
+      
+      const varIndices = extractVarIndices(g);
+      // All three quantified variables should have unique indices
+      expect(new Set(varIndices).size).to.equal(3);
+    });
+
+    it('should correctly substitute variables in atom arguments', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x (R(x) ∧ ∃x R(x)) - ensure substitution works in atom arguments
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.and(
+            builder.atom(R, builder.var(x)),
+            builder.exists([x], builder.atom(R, builder.var(x)))
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      console.log(render(f, st));
+      console.log(render(g, st));
+      
+      // The outer R(x) should use the outer variable
+      // The inner R(x) should use the renamed inner variable
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        const outerVarIdx = g.vars[0];
+        if (g.arg.kind === NodeKind.And) {
+          const leftAtom = g.arg.left;
+          const rightExists = g.arg.right;
+          
+          if (leftAtom.kind === NodeKind.Atom && leftAtom.args.length > 0) {
+            const firstArg = leftAtom.args[0];
+            if (firstArg) {
+              expect(firstArg.kind).to.equal(NodeKind.Var);
+              if (firstArg.kind === NodeKind.Var) {
+                expect(firstArg.idx).to.equal(outerVarIdx);
+              }
+            }
+          }
+          
+          if (rightExists.kind === NodeKind.Exists && rightExists.vars.length > 0) {
+            const innerVarIdx = rightExists.vars[0];
+            if (innerVarIdx !== undefined) {
+              expect(innerVarIdx).to.not.equal(outerVarIdx);
+              
+              if (rightExists.arg.kind === NodeKind.Atom && rightExists.arg.args.length > 0) {
+                const firstArg = rightExists.arg.args[0];
+                if (firstArg) {
+                  expect(firstArg.kind).to.equal(NodeKind.Var);
+                  if (firstArg.kind === NodeKind.Var) {
+                    expect(firstArg.idx).to.equal(innerVarIdx);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    it('should handle complex formula with mixed quantifiers and connectives', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const T = Symbol('T');
+      const st = createSymbolTable();
+      
+      // Test ∀x (R(x) ∨ ∀y (S(y) ∧ ∃x ∃y T(x, y))) - inner x and y should be renamed
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.or(
+            builder.atom(R, builder.var(x)),
+            builder.forall([y], 
+              builder.and(
+                builder.atom(S, builder.var(y)),
+                builder.exists([x, y], builder.atom(T, builder.var(x), builder.var(y)))
+              )
+            )
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      
+      // Should have unique variables for all quantifiers
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll && g.arg.kind === NodeKind.Or && g.arg.right.kind === NodeKind.ForAll) {
+        const outerX = g.vars[0];
+        const outerY = g.arg.right.vars[0];
+        
+        const innerExists = g.arg.right.arg;
+        if (innerExists.kind === NodeKind.And && innerExists.right.kind === NodeKind.Exists) {
+          const innerX = innerExists.right.vars[0];
+          const innerY = innerExists.right.vars[1];
+          
+          expect(innerX).to.not.equal(outerX);
+          expect(innerY).to.not.equal(outerY);
+          expect(innerX).to.not.equal(innerY);
+        }
+      }
+    });
+
+    it('should handle edge case with no variable conflicts', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃y ∀z R(x, y, z) - no conflicts, should remain unchanged
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([y], 
+            builder.forall([z], 
+              builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
+            )
+          )
+        );
+      });
+
+      const g = freshenQuantifiers(f, st);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
     });
   });
 

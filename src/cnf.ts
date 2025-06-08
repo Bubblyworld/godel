@@ -1,4 +1,4 @@
-import { Formula, NodeKind, transform, TransformFns } from "./ast";
+import { add, Formula, NodeKind, resolve, SymbolKind, SymbolTable, Term, transform, TransformFns, visit } from "./ast";
 
 /**
  * Converts all instances of A→B to ¬A∨B.
@@ -19,11 +19,7 @@ export function transformImpliesToOr(f: Formula): Formula {
 }
 
 /**
- * Pushes all negations down to atoms using De Morgan's laws:
- * - ¬(A ∧ B) becomes ¬A ∨ ¬B
- * - ¬(A ∨ B) becomes ¬A ∧ ¬B  
- * - ¬(∀x A) becomes ∃x ¬A
- * - ¬(∃x A) becomes ∀x ¬A
+ * Pushes all negations down to atoms using De Morgan's laws.
  */
 export function pushNegationsDown(f: Formula): Formula {
   let touched = false;
@@ -83,7 +79,7 @@ export function pushNegationsDown(f: Formula): Formula {
 }
 
 /**
- * Removes all double negations: ¬¬A becomes A.
+ * Removes all double negations.
  */
 export function removeDoubleNegations(f: Formula): Formula {
   const cbs: TransformFns = {
@@ -103,8 +99,7 @@ export function removeDoubleNegations(f: Formula): Formula {
 }
 
 /**
- * Distributes OR over AND: A ∨ (B ∧ C) becomes (A ∨ B) ∧ (A ∨ C).
- * Also handles (B ∧ C) ∨ A becomes (B ∨ A) ∧ (C ∨ A).
+ * Distributes OR over AND.
  */
 export function distributeOrOverAnd(f: Formula): Formula {
   let touched = false;
@@ -146,4 +141,56 @@ export function distributeOrOverAnd(f: Formula): Formula {
     f = singlePass(f);
   } while(touched);
   return f;
+}
+
+/**
+ * Transforms a formula so that every quantified variable is unique. This is
+ * necessary before moving universal quantifiers to the outside, to prevent
+ * accidental variable capture between different quantifiers.
+ */
+let freshenCounter = 0;
+export function freshenQuantifiers(f: Formula, st: SymbolTable): Formula {
+  const mappings: Map<number, number> = new Map();
+  const transformVar = (f: Term & { kind: NodeKind.Var }) => ({
+    ...f,
+    idx: mappings.has(f.idx) ? mappings.get(f.idx)! : f.idx,
+  });
+
+  const visited: Set<number> = new Set();
+  const transformQuantifier = (f: Formula & {
+    kind: NodeKind.Exists | NodeKind.ForAll,
+  }) => {
+    const vars: number[] = [];
+    const maps: [number, number][] = [];
+    for (const idx of f.vars) {
+      if (visited.has(idx)) {
+        const node = resolve(SymbolKind.Var, idx, st);
+        const sym = Symbol(`${node.symbol.description}${freshenCounter++}`);
+        const ent = add(st, SymbolKind.Var, sym);
+        vars.push(ent.idx);
+        maps.push([idx, ent.idx]); 
+      } else {
+        visited.add(idx);
+        vars.push(idx);
+      }
+    }
+
+    for (const map of maps) mappings.set(...map);
+    const arg = transform(f.arg, cbs);
+    for (const map of maps) mappings.delete(map[0]);
+
+    return {
+      ...f,
+      vars,
+      arg, 
+    };
+  };
+
+  const cbs = {
+    Var: transformVar,
+    Exists: transformQuantifier,
+    ForAll: transformQuantifier,
+  };
+
+  return transform(f, cbs);
 }
