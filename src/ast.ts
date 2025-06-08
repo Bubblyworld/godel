@@ -37,11 +37,9 @@ export type Formula =
   | { kind: NodeKind.Exists; vars: number[]; arg: Formula };
 
 /**
- * Helper for traversing formulas:
+ * Callbacks for `visit`.
  */
-export function visit<T>(
-  f: Formula | Term,
-  cbs: {
+export type VisitFns<T> = {
     Var: (f: Term & { kind: NodeKind.Var }) => T,
     Const: (f: Term & { kind: NodeKind.Const }) => T,
     FunApp: (f: Term & { kind: NodeKind.FunApp }) => T,
@@ -52,7 +50,14 @@ export function visit<T>(
     Implies: (f: Formula & { kind: NodeKind.Implies }) => T,
     ForAll: (f: Formula & { kind: NodeKind.ForAll }) => T,
     Exists: (f: Formula & { kind: NodeKind.Exists }) => T,
-  },
+};
+
+/**
+ * Helper for traversing formulas.
+ */
+export function visit<T>(
+  f: Formula | Term,
+  cbs: VisitFns<T>,
 ): T {
   switch(f.kind) {
     case NodeKind.Var: return cbs.Var(f);
@@ -68,6 +73,100 @@ export function visit<T>(
     default:
       const _exhaustive: never = f;
       throw new Error(_exhaustive);
+  }
+}
+
+/**
+ * Callbacks for `transform`.
+ */
+export type TransformFns = {
+    Var?: (f: Term & { kind: NodeKind.Var }) => Term,
+    Const?: (f: Term & { kind: NodeKind.Const }) => Term,
+    FunApp?: (f: Term & { kind: NodeKind.FunApp }) => Term,
+    Atom?: (f: Formula & { kind: NodeKind.Atom }) => Formula,
+    Not?: (f: Formula & { kind: NodeKind.Not }) => Formula,
+    And?: (f: Formula & { kind: NodeKind.And }) => Formula,
+    Or?: (f: Formula & { kind: NodeKind.Or }) => Formula,
+    Implies?: (f: Formula & { kind: NodeKind.Implies }) => Formula,
+    ForAll?: (f: Formula & { kind: NodeKind.ForAll }) => Formula,
+    Exists?: (f: Formula & { kind: NodeKind.Exists }) => Formula,
+};
+
+/**
+ * Helper for transforming formulas.
+ */
+export function transform(f: Formula, cbs: TransformFns): Formula;
+export function transform(f: Term, cbs: TransformFns): Term;
+export function transform(
+  f: Formula | Term,
+  cbs: TransformFns,
+): Formula | Term {
+  switch(f.kind) {
+    case NodeKind.Var: return cbs.Var ? cbs.Var(f) : f;
+    case NodeKind.Const: return cbs.Const ? cbs.Const(f) : f;
+    case NodeKind.FunApp: {
+      if (cbs.FunApp) return cbs.FunApp(f);
+      return {
+        ...f,
+        args: f.args.map(arg => transform(arg, cbs)),
+      };
+    }
+    case NodeKind.Atom: {
+      if (cbs.Atom) return cbs.Atom(f);
+      return {
+        ...f,
+        args: f.args.map(arg => transform(arg, cbs)),
+      };
+    }
+    case NodeKind.Not: {
+      if (cbs.Not) return cbs.Not(f);
+      return {
+        ...f,
+        arg: transform(f.arg, cbs),
+      };
+    }
+    case NodeKind.And: {
+      if (cbs.And) return cbs.And(f);
+      return {
+        ...f,
+        left: transform(f.left, cbs),
+        right: transform(f.right, cbs),
+      };
+    }
+    case NodeKind.Or: {
+      if (cbs.Or) return cbs.Or(f);
+      return {
+        ...f,
+        left: transform(f.left, cbs),
+        right: transform(f.right, cbs),
+      };
+    }
+    case NodeKind.Implies: {
+      if (cbs.Implies) return cbs.Implies(f);
+      return {
+        ...f,
+        left: transform(f.left, cbs),
+        right: transform(f.right, cbs),
+      };
+    }
+    case NodeKind.ForAll: {
+      if (cbs.ForAll) return cbs.ForAll(f);
+      return {
+        ...f,
+        arg: transform(f.arg, cbs),
+      };
+    }
+    case NodeKind.Exists: {
+      if (cbs.Exists) return cbs.Exists(f);
+      return {
+        ...f,
+        arg: transform(f.arg, cbs),
+      };
+    }
+    default: {
+      const _exhaustive: never = f;
+      throw new Error(_exhaustive);
+    }
   }
 }
 
