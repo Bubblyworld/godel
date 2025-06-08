@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { construct, createSymbolTable, NodeKind, render } from "./ast";
-import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers, moveQuantifiersOutside, skolemizeExistentials } from './cnf';
+import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers, moveQuantifiersOutside, skolemizeExistentials, removeLeadingUniversals, toCNF } from './cnf';
 
 describe('cnf.ts', () => {
   it('should convert implications to disjunctions', () => {
@@ -1426,6 +1426,279 @@ describe('cnf.ts', () => {
       
       // Should end up as (¬R(a) ∨ ¬R(b)) ∨ R(c) which is already in good form
       expect(g.kind).to.equal(NodeKind.Or);
+    });
+  });
+
+  // Tests for removeLeadingUniversals
+  describe("removeLeadingUniversals", () => {
+    it("should leave formulas with no quantifiers unchanged", () => {
+      const a = Symbol("a");
+      const b = Symbol("b");
+      const R = Symbol("R");
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ R(b)
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.atom(R, builder.const(b))
+        );
+      });
+
+      const g = removeLeadingUniversals(f);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+
+    it("should remove single leading universal quantifier", () => {
+      const x = Symbol("x");
+      const R = Symbol("R");
+      const st = createSymbolTable();
+      
+      // Test ∀x R(x) → R(x)
+      const f = construct(st, builder => {
+        return builder.forall([x], builder.atom(R, builder.var(x)));
+      });
+
+      const g = removeLeadingUniversals(f);
+      expect(g.kind).to.equal(NodeKind.Atom);
+      if (g.kind === NodeKind.Atom) {
+        expect(g.args.length).to.equal(1);
+        expect(g.args[0]?.kind).to.equal(NodeKind.Var);
+      }
+    });
+
+    it("should remove multiple leading universal quantifiers", () => {
+      const x = Symbol("x");
+      const y = Symbol("y");
+      const R = Symbol("R");
+      const st = createSymbolTable();
+      
+      // Test ∀x ∀y R(x, y) → R(x, y)
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.forall([y], 
+            builder.atom(R, builder.var(x), builder.var(y))
+          )
+        );
+      });
+
+      const g = removeLeadingUniversals(f);
+      expect(g.kind).to.equal(NodeKind.Atom);
+      if (g.kind === NodeKind.Atom) {
+        expect(g.args.length).to.equal(2);
+        expect(g.args[0]?.kind).to.equal(NodeKind.Var);
+        expect(g.args[1]?.kind).to.equal(NodeKind.Var);
+      }
+    });
+
+    it("should leave non-leading quantifiers unchanged", () => {
+      const x = Symbol("x");
+      const y = Symbol("y");
+      const R = Symbol("R");
+      const S = Symbol("S");
+      const st = createSymbolTable();
+      
+      // Test ∀x (R(x) ∧ ∃y S(y)) → R(x) ∧ ∃y S(y)
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.and(
+            builder.atom(R, builder.var(x)),
+            builder.exists([y], builder.atom(S, builder.var(y)))
+          )
+        );
+      });
+
+      const g = removeLeadingUniversals(f);
+      expect(g.kind).to.equal(NodeKind.And);
+      if (g.kind === NodeKind.And) {
+        expect(g.left.kind).to.equal(NodeKind.Atom);
+        expect(g.right.kind).to.equal(NodeKind.Exists);
+      }
+    });
+
+    it("should handle complex formula with mixed quantifiers", () => {
+      const x = Symbol("x");
+      const y = Symbol("y");
+      const z = Symbol("z");
+      const R = Symbol("R");
+      const S = Symbol("S");
+      const st = createSymbolTable();
+      
+      // Test ∀x ∀y (R(x) ∨ ∃z S(y, z)) → R(x) ∨ ∃z S(y, z)
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.forall([y], 
+            builder.or(
+              builder.atom(R, builder.var(x)),
+              builder.exists([z], builder.atom(S, builder.var(y), builder.var(z)))
+            )
+          )
+        );
+      });
+
+      const g = removeLeadingUniversals(f);
+      expect(g.kind).to.equal(NodeKind.Or);
+      if (g.kind === NodeKind.Or) {
+        expect(g.left.kind).to.equal(NodeKind.Atom);
+        expect(g.right.kind).to.equal(NodeKind.Exists);
+      }
+    });
+  });
+
+  // Tests for toCNF
+  describe("toCNF", () => {
+    it("should convert simple implication to CNF", () => {
+      const a = Symbol("a");
+      const b = Symbol("b");
+      const R = Symbol("R");
+      const st = createSymbolTable();
+      
+      // Test R(a) → R(b)
+      const f = construct(st, builder => {
+        return builder.implies(
+          builder.atom(R, builder.const(a)),
+          builder.atom(R, builder.const(b))
+        );
+      });
+
+      const g = toCNF(f, st);
+      expect(g.kind).to.equal(NodeKind.Or);
+      if (g.kind === NodeKind.Or) {
+        expect(g.left.kind).to.equal(NodeKind.Not);
+        expect(g.right.kind).to.equal(NodeKind.Atom);
+      }
+    });
+
+    it("should convert complex formula with quantifiers to CNF", () => {
+      const x = Symbol("x");
+      const y = Symbol("y");
+      const R = Symbol("R");
+      const S = Symbol("S");
+      const st = createSymbolTable();
+      
+      // Test ∀x (R(x) → ∃y S(x, y))
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.implies(
+            builder.atom(R, builder.var(x)),
+            builder.exists([y], builder.atom(S, builder.var(x), builder.var(y)))
+          )
+        );
+      });
+
+      const g = toCNF(f, st);
+      // After full transformation, should be in CNF form without leading quantifiers
+      // The exact structure depends on the pipeline, but it should not have implications or existentials
+      expect(g.kind).to.not.equal(NodeKind.Implies);
+      expect(g.kind).to.not.equal(NodeKind.Exists);
+      expect(g.kind).to.not.equal(NodeKind.ForAll);
+    });
+
+    it("should handle formula with negated conjunction", () => {
+      const a = Symbol("a");
+      const b = Symbol("b");
+      const R = Symbol("R");
+      const st = createSymbolTable();
+      
+      // Test ¬(R(a) ∧ R(b))
+      const f = construct(st, builder => {
+        return builder.not(
+          builder.and(
+            builder.atom(R, builder.const(a)),
+            builder.atom(R, builder.const(b))
+          )
+        );
+      });
+
+      const g = toCNF(f, st);
+      // Should become ¬R(a) ∨ ¬R(b) after applying De Morgan
+      expect(g.kind).to.equal(NodeKind.Or);
+      if (g.kind === NodeKind.Or) {
+        expect(g.left.kind).to.equal(NodeKind.Not);
+        expect(g.right.kind).to.equal(NodeKind.Not);
+      }
+    });
+
+    it("should handle complex nested formula", () => {
+      const a = Symbol("a");
+      const b = Symbol("b");
+      const c = Symbol("c");
+      const x = Symbol("x");
+      const R = Symbol("R");
+      const S = Symbol("S");
+      const st = createSymbolTable();
+      
+      // Test (R(a) → R(b)) ∧ ∃x (S(x) → R(c))
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.implies(
+            builder.atom(R, builder.const(a)),
+            builder.atom(R, builder.const(b))
+          ),
+          builder.exists([x], 
+            builder.implies(
+              builder.atom(S, builder.var(x)),
+              builder.atom(R, builder.const(c))
+            )
+          )
+        );
+      });
+
+      const g = toCNF(f, st);
+      // After transformation: no implications, no existentials, in CNF
+      expect(g.kind).to.not.equal(NodeKind.Implies);
+      expect(g.kind).to.not.equal(NodeKind.Exists);
+      expect(g.kind).to.not.equal(NodeKind.ForAll);
+      
+      // Should be in CNF form (conjunction of disjunctions or single atoms/negated atoms)
+      const isCNF = (f: any): boolean => {
+        if (f.kind === NodeKind.Atom || (f.kind === NodeKind.Not && f.arg.kind === NodeKind.Atom)) {
+          return true;
+        }
+        if (f.kind === NodeKind.Or) {
+          return isCNF(f.left) && isCNF(f.right);
+        }
+        if (f.kind === NodeKind.And) {
+          return isCNF(f.left) && isCNF(f.right);
+        }
+        if (f.kind === NodeKind.FunApp) {
+          return true; // Skolem functions are allowed
+        }
+        return false;
+      };
+      
+      expect(isCNF(g)).to.be.true;
+    });
+
+    it("should produce equisatisfiable formula", () => {
+      const x = Symbol("x");
+      const y = Symbol("y");
+      const R = Symbol("R");
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃y R(x, y) 
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([y], 
+            builder.atom(R, builder.var(x), builder.var(y))
+          )
+        );
+      });
+
+      const g = toCNF(f, st);
+      
+      // The result should be R(x, F0(x)) where F0 is a Skolem function
+      expect(g.kind).to.equal(NodeKind.Atom);
+      if (g.kind === NodeKind.Atom) {
+        expect(g.args.length).to.equal(2);
+        expect(g.args[0]?.kind).to.equal(NodeKind.Var);
+        expect(g.args[1]?.kind).to.equal(NodeKind.FunApp);
+        if (g.args[1]?.kind === NodeKind.FunApp) {
+          // Skolem function should depend on x
+          expect(g.args[1].args.length).to.equal(1);
+          expect(g.args[1].args[0]?.kind).to.equal(NodeKind.Var);
+        }
+      }
     });
   });
 });

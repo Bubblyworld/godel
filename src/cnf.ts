@@ -341,3 +341,28 @@ export function moveQuantifiersOutside(f: Formula): Formula {
   } while(touched);
   return f;
 }
+
+/**
+ * Removes leading universal quantifiers from a formula. Since free variables
+ * are universally quantified by convention, this is equivalent.
+ */
+export function removeLeadingUniversals(f: Formula): Formula {
+  while (f.kind === NodeKind.ForAll) f = f.arg;
+  return f;
+}
+
+/**
+ * Converts a first-order formula to an equisatisfiable CNF form suitable for
+ * use in a resolution-based refutation algorithm.
+ */
+export function toCNF(f: Formula, st: SymbolTable): Formula {
+  f = transformImpliesToOr(f);
+  f = pushNegationsDown(f);
+  f = removeDoubleNegations(f);
+  f = freshenQuantifiers(f, st);
+  f = moveQuantifiersOutside(f);
+  f = skolemizeExistentials(f, st);
+  f = distributeOrOverAnd(f);
+  f = removeLeadingUniversals(f);
+  return f;
+}
