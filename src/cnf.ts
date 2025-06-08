@@ -144,6 +144,66 @@ export function distributeOrOverAnd(f: Formula): Formula {
 }
 
 /**
+ * Skolemizes existential quantifiers by replacing them with function symbols.
+ * Each existential variable is replaced with a Skolem function that takes all
+ * universally quantified variables in scope as arguments.
+ */
+let skolemCounter = 0;
+export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
+  const mappings: Map<number, Term> = new Map();
+  const transformVar = (f: Term & { kind: NodeKind.Var }) => {
+    if (mappings.has(f.idx)) {
+      return mappings.get(f.idx)!;
+    }
+    return f;
+  };
+
+  const scope: number[] = [];
+  const transformQuantifier = (f: Formula & {
+    kind: NodeKind.Exists | NodeKind.ForAll,
+  }) => {
+    if (f.kind === NodeKind.ForAll) {
+      const len = scope.length;
+      scope.push(...f.vars);
+      const arg = transform(f.arg, cbs);
+      scope.length = len;
+      
+      return {
+        kind: NodeKind.ForAll,
+        vars: f.vars,
+        arg,
+      } as Formula;
+    } else {
+      const maps: [number, Term][] = [];
+      for (const idx of f.vars) {
+        const sym = Symbol(`F${skolemCounter++}`);
+        const func = add(st, SymbolKind.Fun, sym, scope.length);
+        const term: Term = {
+          idx: func.idx,
+          kind: NodeKind.FunApp,
+          args: scope.map(idx => ({ kind: NodeKind.Var, idx }))
+        };
+        
+        maps.push([idx, term]);
+      }
+      
+      for (const [idx, term] of maps) mappings.set(idx, term);
+      const arg = transform(f.arg, cbs);
+      for (const [idx, _] of maps) mappings.delete(idx);
+      return arg;
+    }
+  };
+
+  const cbs = {
+    Var: transformVar,
+    Exists: transformQuantifier,
+    ForAll: transformQuantifier,
+  };
+
+  return transform(f, cbs);
+}
+
+/**
  * Transforms a formula so that every quantified variable is unique. This is
  * necessary before moving universal quantifiers to the outside, to prevent
  * accidental variable capture between different quantifiers.

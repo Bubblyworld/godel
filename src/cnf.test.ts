@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { construct, createSymbolTable, NodeKind, render } from "./ast";
-import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers, moveQuantifiersOutside } from './cnf';
+import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers, moveQuantifiersOutside, skolemizeExistentials } from './cnf';
 
 describe('cnf.ts', () => {
   it('should convert implications to disjunctions', () => {
@@ -1087,6 +1087,276 @@ describe('cnf.ts', () => {
 
       const g = moveQuantifiersOutside(f);
       expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+  });
+
+  // Tests for skolemize
+  describe('skolemize', () => {
+    it('should leave formulas with no quantifiers unchanged', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ R(b)
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.atom(R, builder.const(b))
+        );
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+
+    it('should leave universal quantifiers unchanged', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x R(x)
+      const f = construct(st, builder => {
+        return builder.forall([x], builder.atom(R, builder.var(x)));
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.vars.length).to.equal(1);
+        expect(g.arg.kind).to.equal(NodeKind.Atom);
+      }
+    });
+
+    it('should replace existential quantifier with Skolem constant', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∃x R(x) → R(skolem_0)
+      const f = construct(st, builder => {
+        return builder.exists([x], builder.atom(R, builder.var(x)));
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.Atom);
+      if (g.kind === NodeKind.Atom) {
+        expect(g.args.length).to.equal(1);
+        expect(g.args[0]?.kind).to.equal(NodeKind.FunApp);
+        if (g.args[0]?.kind === NodeKind.FunApp) {
+          // Should be 0-ary function (Skolem constant)
+          expect(g.args[0].args.length).to.equal(0);
+        }
+      }
+    });
+
+    it('should replace existential quantifier with Skolem function dependent on universal variables', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃y R(x, y) → ∀x R(x, skolem_0(x))
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([y], 
+            builder.atom(R, builder.var(x), builder.var(y))
+          )
+        );
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.Atom);
+        if (g.arg.kind === NodeKind.Atom) {
+          expect(g.arg.args.length).to.equal(2);
+          // First arg should be the universal variable
+          expect(g.arg.args[0]?.kind).to.equal(NodeKind.Var);
+          // Second arg should be Skolem function of x
+          expect(g.arg.args[1]?.kind).to.equal(NodeKind.FunApp);
+          if (g.arg.args[1]?.kind === NodeKind.FunApp) {
+            expect(g.arg.args[1].args.length).to.equal(1);
+            expect(g.arg.args[1].args[0]?.kind).to.equal(NodeKind.Var);
+          }
+        }
+      }
+    });
+
+    it('should handle multiple existential variables in same quantifier', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃y ∃z R(x, y, z) → ∀x R(x, skolem_0(x), skolem_1(x))
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([y, z], 
+            builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
+          )
+        );
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.Atom);
+        if (g.arg.kind === NodeKind.Atom) {
+          expect(g.arg.args.length).to.equal(3);
+          // First arg should be universal variable
+          expect(g.arg.args[0]?.kind).to.equal(NodeKind.Var);
+          // Second and third args should be different Skolem functions
+          expect(g.arg.args[1]?.kind).to.equal(NodeKind.FunApp);
+          expect(g.arg.args[2]?.kind).to.equal(NodeKind.FunApp);
+          if (g.arg.args[1]?.kind === NodeKind.FunApp && g.arg.args[2]?.kind === NodeKind.FunApp) {
+            // Should be different function indices
+            expect(g.arg.args[1].idx).to.not.equal(g.arg.args[2].idx);
+            // Both should depend on x
+            expect(g.arg.args[1].args.length).to.equal(1);
+            expect(g.arg.args[2].args.length).to.equal(1);
+          }
+        }
+      }
+    });
+
+    it('should handle nested quantifiers correctly', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∀y ∃z R(x, y, z) → ∀x ∀y R(x, y, skolem_0(x, y))
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.forall([y], 
+            builder.exists([z], 
+              builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
+            )
+          )
+        );
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.ForAll);
+        if (g.arg.kind === NodeKind.ForAll) {
+          expect(g.arg.arg.kind).to.equal(NodeKind.Atom);
+          if (g.arg.arg.kind === NodeKind.Atom) {
+            expect(g.arg.arg.args.length).to.equal(3);
+            // Third arg should be Skolem function with 2 arguments (x, y)
+            expect(g.arg.arg.args[2]?.kind).to.equal(NodeKind.FunApp);
+            if (g.arg.arg.args[2]?.kind === NodeKind.FunApp) {
+              expect(g.arg.arg.args[2].args.length).to.equal(2);
+            }
+          }
+        }
+      }
+    });
+
+    it('should handle complex formula with mixed quantifiers', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test ∀x (R(x) ∧ ∃y S(x, y)) ∧ ∃z R(z)
+      // Should become ∀x (R(x) ∧ S(x, skolem_0(x))) ∧ R(skolem_1)
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.forall([x], 
+            builder.and(
+              builder.atom(R, builder.var(x)),
+              builder.exists([y], builder.atom(S, builder.var(x), builder.var(y)))
+            )
+          ),
+          builder.exists([z], builder.atom(R, builder.var(z)))
+        );
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.And);
+      if (g.kind === NodeKind.And) {
+        // Left side should be ∀x (R(x) ∧ S(x, skolem_0(x)))
+        expect(g.left.kind).to.equal(NodeKind.ForAll);
+        // Right side should be R(skolem_1)
+        expect(g.right.kind).to.equal(NodeKind.Atom);
+        if (g.right.kind === NodeKind.Atom) {
+          expect(g.right.args[0]?.kind).to.equal(NodeKind.FunApp);
+          if (g.right.args[0]?.kind === NodeKind.FunApp) {
+            // Should be 0-ary (constant)
+            expect(g.right.args[0].args.length).to.equal(0);
+          }
+        }
+      }
+    });
+
+    it('should handle deeply nested existentials', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∃x ∃y ∃z R(x, y, z) → R(skolem_0, skolem_1, skolem_2)
+      const f = construct(st, builder => {
+        return builder.exists([x], 
+          builder.exists([y], 
+            builder.exists([z], 
+              builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
+            )
+          )
+        );
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.Atom);
+      if (g.kind === NodeKind.Atom) {
+        expect(g.args.length).to.equal(3);
+        // All should be 0-ary Skolem functions (constants)
+        expect(g.args[0]?.kind).to.equal(NodeKind.FunApp);
+        expect(g.args[1]?.kind).to.equal(NodeKind.FunApp);
+        expect(g.args[2]?.kind).to.equal(NodeKind.FunApp);
+        if (g.args[0]?.kind === NodeKind.FunApp && 
+            g.args[1]?.kind === NodeKind.FunApp && 
+            g.args[2]?.kind === NodeKind.FunApp) {
+          expect(g.args[0].args.length).to.equal(0);
+          expect(g.args[1].args.length).to.equal(0);
+          expect(g.args[2].args.length).to.equal(0);
+          // Should be different function indices
+          expect(g.args[0].idx).to.not.equal(g.args[1].idx);
+          expect(g.args[1].idx).to.not.equal(g.args[2].idx);
+        }
+      }
+    });
+
+    it('should create unique Skolem functions across multiple calls', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test that multiple skolemizations create different functions
+      const f1 = construct(st, builder => {
+        return builder.exists([x], builder.atom(R, builder.var(x)));
+      });
+      
+      const f2 = construct(st, builder => {
+        return builder.exists([x], builder.atom(R, builder.var(x)));
+      });
+
+      const g1 = skolemizeExistentials(f1, st);
+      const g2 = skolemizeExistentials(f2, st);
+      
+      // Should use different Skolem function indices
+      if (g1.kind === NodeKind.Atom && g2.kind === NodeKind.Atom &&
+          g1.args[0]?.kind === NodeKind.FunApp && g2.args[0]?.kind === NodeKind.FunApp) {
+        expect(g1.args[0].idx).to.not.equal(g2.args[0].idx);
+      }
     });
   });
 
