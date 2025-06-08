@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { construct, createSymbolTable, NodeKind, render } from "./ast";
-import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers } from './cnf';
+import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers, moveQuantifiersOutside } from './cnf';
 
 describe('cnf.ts', () => {
   it('should convert implications to disjunctions', () => {
@@ -728,8 +728,6 @@ describe('cnf.ts', () => {
       });
 
       const g = freshenQuantifiers(f, st);
-      console.log(render(f, st));
-      console.log(render(g, st));
       
       // The outer R(x) should use the outer variable
       // The inner R(x) should use the renamed inner variable
@@ -832,6 +830,262 @@ describe('cnf.ts', () => {
       });
 
       const g = freshenQuantifiers(f, st);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+  });
+
+  // Tests for moveQuantifiersOutside
+  describe('moveQuantifiersOutside', () => {
+    it('should leave formulas with no quantifiers unchanged', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ R(b)
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.atom(R, builder.const(b))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
+    });
+
+    it('should move universal quantifier out of conjunction on right', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ ∀x S(x) → ∀x (R(a) ∧ S(x))
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.forall([x], builder.atom(S, builder.var(x)))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.And);
+        if (g.arg.kind === NodeKind.And) {
+          expect(g.arg.left.kind).to.equal(NodeKind.Atom);
+          expect(g.arg.right.kind).to.equal(NodeKind.Atom);
+        }
+      }
+    });
+
+    it('should move universal quantifier out of conjunction on left', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test ∀x S(x) ∧ R(a) → ∀x (S(x) ∧ R(a))
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.forall([x], builder.atom(S, builder.var(x))),
+          builder.atom(R, builder.const(a))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.And);
+        if (g.arg.kind === NodeKind.And) {
+          expect(g.arg.left.kind).to.equal(NodeKind.Atom);
+          expect(g.arg.right.kind).to.equal(NodeKind.Atom);
+        }
+      }
+    });
+
+    it('should move existential quantifier out of conjunction', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ ∃x S(x) → ∃x (R(a) ∧ S(x))
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.exists([x], builder.atom(S, builder.var(x)))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(g.kind).to.equal(NodeKind.Exists);
+      if (g.kind === NodeKind.Exists) {
+        expect(g.arg.kind).to.equal(NodeKind.And);
+      }
+    });
+
+    it('should move universal quantifier out of disjunction on right', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∨ ∀x S(x) → ∀x (R(a) ∨ S(x))
+      const f = construct(st, builder => {
+        return builder.or(
+          builder.atom(R, builder.const(a)),
+          builder.forall([x], builder.atom(S, builder.var(x)))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.Or);
+      }
+    });
+
+    it('should move existential quantifier out of disjunction on left', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test ∃x S(x) ∨ R(a) → ∃x (S(x) ∨ R(a))
+      const f = construct(st, builder => {
+        return builder.or(
+          builder.exists([x], builder.atom(S, builder.var(x))),
+          builder.atom(R, builder.const(a))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(g.kind).to.equal(NodeKind.Exists);
+      if (g.kind === NodeKind.Exists) {
+        expect(g.arg.kind).to.equal(NodeKind.Or);
+      }
+    });
+
+    it('should handle multiple quantifiers in sequence', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const T = Symbol('T');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ ∀x S(x) ∧ ∃y T(y) → ∃y ∀x (R(a) ∧ S(x) ∧ T(y))
+      // This tests multiple passes
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.and(
+            builder.atom(R, builder.const(a)),
+            builder.forall([x], builder.atom(S, builder.var(x)))
+          ),
+          builder.exists([y], builder.atom(T, builder.var(y)))
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      // Should have moved both quantifiers to the outside
+      expect(g.kind === NodeKind.ForAll || g.kind === NodeKind.Exists).to.be.true;
+      if (g.kind === NodeKind.Exists || g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind === NodeKind.ForAll || g.arg.kind === NodeKind.Exists || g.arg.kind === NodeKind.And).to.be.true;
+      }
+    });
+
+    it('should handle nested quantifiers correctly', () => {
+      const a = Symbol('a');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test R(a) ∧ ∀x ∃y S(x, y) → ∀x ∃y (R(a) ∧ S(x, y))
+      // Multi-pass algorithm moves all quantifiers to the outside
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.atom(R, builder.const(a)),
+          builder.forall([x], 
+            builder.exists([y], 
+              builder.atom(S, builder.var(x), builder.var(y))
+            )
+          )
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      expect(g.kind).to.equal(NodeKind.ForAll);
+      if (g.kind === NodeKind.ForAll) {
+        expect(g.arg.kind).to.equal(NodeKind.Exists);
+        if (g.arg.kind === NodeKind.Exists) {
+          expect(g.arg.arg.kind).to.equal(NodeKind.And);
+          if (g.arg.arg.kind === NodeKind.And) {
+            expect(g.arg.arg.left.kind).to.equal(NodeKind.Atom);
+            expect(g.arg.arg.right.kind).to.equal(NodeKind.Atom);
+          }
+        }
+      }
+    });
+
+    it('should handle complex mixed quantifiers and connectives', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const T = Symbol('T');
+      const st = createSymbolTable();
+      
+      // Test (R(a) ∨ ∀x S(x)) ∧ (∃y T(y) ∨ R(b))
+      // Should become ∀x ∃y ((R(a) ∨ S(x)) ∧ (T(y) ∨ R(b)))
+      const f = construct(st, builder => {
+        return builder.and(
+          builder.or(
+            builder.atom(R, builder.const(a)),
+            builder.forall([x], builder.atom(S, builder.var(x)))
+          ),
+          builder.or(
+            builder.exists([y], builder.atom(T, builder.var(y))),
+            builder.atom(R, builder.const(b))
+          )
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
+      // Should have moved quantifiers to the outside
+      expect(g.kind === NodeKind.ForAll || g.kind === NodeKind.Exists).to.be.true;
+    });
+
+    it('should leave already moved quantifiers unchanged', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
+      const st = createSymbolTable();
+      
+      // Test ∀x ∃y (R(x) ∧ S(y)) - already in correct form
+      const f = construct(st, builder => {
+        return builder.forall([x], 
+          builder.exists([y], 
+            builder.and(
+              builder.atom(R, builder.var(x)),
+              builder.atom(S, builder.var(y))
+            )
+          )
+        );
+      });
+
+      const g = moveQuantifiersOutside(f);
       expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
     });
   });

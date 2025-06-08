@@ -194,3 +194,90 @@ export function freshenQuantifiers(f: Formula, st: SymbolTable): Formula {
 
   return transform(f, cbs);
 }
+
+/**
+ * Moves quantifiers to the outside of the formula. Note that this is only
+ * guaranteed to produce an equivalent output formula if you have called
+ * `freshenQuantifiers` with the formula first.
+ */
+export function moveQuantifiersOutside(f: Formula): Formula {
+  let touched = false;
+  const singlePass = (f: Formula): Formula => {
+    const cbs: TransformFns = {
+      And: f => {
+        // A ∧ ∀x B → ∀x (A ∧ B) or A ∧ ∃x B → ∃x (A ∧ B)
+        if (f.right.kind === NodeKind.ForAll || f.right.kind === NodeKind.Exists) {
+          touched = true;
+          return {
+            kind: f.right.kind,
+            vars: f.right.vars,
+            arg: {
+              kind: NodeKind.And,
+              left: transform(f.left, cbs),
+              right: transform(f.right.arg, cbs),
+            },
+          };
+        }
+        // ∀x A ∧ B → ∀x (A ∧ B) or ∃x A ∧ B → ∃x (A ∧ B)
+        if (f.left.kind === NodeKind.ForAll || f.left.kind === NodeKind.Exists) {
+          touched = true;
+          return {
+            kind: f.left.kind,
+            vars: f.left.vars,
+            arg: {
+              kind: NodeKind.And,
+              left: transform(f.left.arg, cbs),
+              right: transform(f.right, cbs),
+            },
+          };
+        }
+        return {
+          kind: NodeKind.And,
+          left: transform(f.left, cbs),
+          right: transform(f.right, cbs),
+        };
+      },
+      Or: f => {
+        // A ∨ ∀x B → ∀x (A ∨ B) or A ∨ ∃x B → ∃x (A ∨ B)
+        if (f.right.kind === NodeKind.ForAll || f.right.kind === NodeKind.Exists) {
+          touched = true;
+          return {
+            kind: f.right.kind,
+            vars: f.right.vars,
+            arg: {
+              kind: NodeKind.Or,
+              left: transform(f.left, cbs),
+              right: transform(f.right.arg, cbs),
+            },
+          };
+        }
+        // ∀x A ∨ B → ∀x (A ∨ B) or ∃x A ∨ B → ∃x (A ∨ B)
+        if (f.left.kind === NodeKind.ForAll || f.left.kind === NodeKind.Exists) {
+          touched = true;
+          return {
+            kind: f.left.kind,
+            vars: f.left.vars,
+            arg: {
+              kind: NodeKind.Or,
+              left: transform(f.left.arg, cbs),
+              right: transform(f.right, cbs),
+            },
+          };
+        }
+        return {
+          kind: NodeKind.Or,
+          left: transform(f.left, cbs),
+          right: transform(f.right, cbs),
+        };
+      },
+    };
+    
+    return transform(f, cbs);
+  };
+  
+  do {
+    touched = false;
+    f = singlePass(f);
+  } while(touched);
+  return f;
+}
