@@ -1142,11 +1142,25 @@ describe('cnf.ts', () => {
       expect(g.kind).to.equal(NodeKind.Atom);
       if (g.kind === NodeKind.Atom) {
         expect(g.args.length).to.equal(1);
-        expect(g.args[0]?.kind).to.equal(NodeKind.FunApp);
-        if (g.args[0]?.kind === NodeKind.FunApp) {
-          // Should be 0-ary function (Skolem constant)
-          expect(g.args[0].args.length).to.equal(0);
-        }
+        expect(g.args[0]?.kind).to.equal(NodeKind.Const);
+      }
+    });
+
+    it('should use actual constant symbols when no universal variables in scope', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const st = createSymbolTable();
+      
+      // Test ∃x R(x) → R(c0) where c0 is a constant symbol, not a function
+      const f = construct(st, builder => {
+        return builder.exists([x], builder.atom(R, builder.var(x)));
+      });
+
+      const g = skolemizeExistentials(f, st);
+      expect(g.kind).to.equal(NodeKind.Atom);
+      if (g.kind === NodeKind.Atom) {
+        expect(g.args.length).to.equal(1);
+        expect(g.args[0]?.kind).to.equal(NodeKind.Const);
       }
     });
 
@@ -1287,11 +1301,7 @@ describe('cnf.ts', () => {
         // Right side should be R(skolem_1)
         expect(g.right.kind).to.equal(NodeKind.Atom);
         if (g.right.kind === NodeKind.Atom) {
-          expect(g.right.args[0]?.kind).to.equal(NodeKind.FunApp);
-          if (g.right.args[0]?.kind === NodeKind.FunApp) {
-            // Should be 0-ary (constant)
-            expect(g.right.args[0].args.length).to.equal(0);
-          }
+          expect(g.right.args[0]?.kind).to.equal(NodeKind.Const);
         }
       }
     });
@@ -1318,17 +1328,14 @@ describe('cnf.ts', () => {
       expect(g.kind).to.equal(NodeKind.Atom);
       if (g.kind === NodeKind.Atom) {
         expect(g.args.length).to.equal(3);
-        // All should be 0-ary Skolem functions (constants)
-        expect(g.args[0]?.kind).to.equal(NodeKind.FunApp);
-        expect(g.args[1]?.kind).to.equal(NodeKind.FunApp);
-        expect(g.args[2]?.kind).to.equal(NodeKind.FunApp);
-        if (g.args[0]?.kind === NodeKind.FunApp && 
-            g.args[1]?.kind === NodeKind.FunApp && 
-            g.args[2]?.kind === NodeKind.FunApp) {
-          expect(g.args[0].args.length).to.equal(0);
-          expect(g.args[1].args.length).to.equal(0);
-          expect(g.args[2].args.length).to.equal(0);
-          // Should be different function indices
+        // All should be Skolem constants
+        expect(g.args[0]?.kind).to.equal(NodeKind.Const);
+        expect(g.args[1]?.kind).to.equal(NodeKind.Const);
+        expect(g.args[2]?.kind).to.equal(NodeKind.Const);
+        if (g.args[0]?.kind === NodeKind.Const && 
+            g.args[1]?.kind === NodeKind.Const && 
+            g.args[2]?.kind === NodeKind.Const) {
+          // Should be different constant indices
           expect(g.args[0].idx).to.not.equal(g.args[1].idx);
           expect(g.args[1].idx).to.not.equal(g.args[2].idx);
         }
@@ -1352,9 +1359,9 @@ describe('cnf.ts', () => {
       const g1 = skolemizeExistentials(f1, st);
       const g2 = skolemizeExistentials(f2, st);
       
-      // Should use different Skolem function indices
+      // Should use different Skolem constant indices
       if (g1.kind === NodeKind.Atom && g2.kind === NodeKind.Atom &&
-          g1.args[0]?.kind === NodeKind.FunApp && g2.args[0]?.kind === NodeKind.FunApp) {
+          g1.args[0]?.kind === NodeKind.Const && g2.args[0]?.kind === NodeKind.Const) {
         expect(g1.args[0].idx).to.not.equal(g2.args[0].idx);
       }
     });
@@ -1645,6 +1652,8 @@ describe('cnf.ts', () => {
       });
 
       const g = toCNF(f, st);
+      console.log(render(f, st));
+      console.log(render(g, st));
       // After transformation: no implications, no existentials, in CNF
       expect(g.kind).to.not.equal(NodeKind.Implies);
       expect(g.kind).to.not.equal(NodeKind.Exists);

@@ -177,14 +177,23 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
       const maps: [number, Term][] = [];
       for (const idx of f.vars) {
         const sym = Symbol(`F${skolemCounter++}`);
-        const func = add(st, SymbolKind.Fun, sym, scope.length);
-        const term: Term = {
-          idx: func.idx,
-          kind: NodeKind.FunApp,
-          args: scope.map(idx => ({ kind: NodeKind.Var, idx }))
-        };
         
-        maps.push([idx, term]);
+        if (scope.length === 0) {
+          const constEntry = add(st, SymbolKind.Const, sym);
+          const term: Term = {
+            kind: NodeKind.Const,
+            idx: constEntry.idx,
+          };
+          maps.push([idx, term]);
+        } else {
+          const func = add(st, SymbolKind.Fun, sym, scope.length);
+          const term: Term = {
+            idx: func.idx,
+            kind: NodeKind.FunApp,
+            args: scope.map(idx => ({ kind: NodeKind.Var, idx }))
+          };
+          maps.push([idx, term]);
+        }
       }
       
       for (const [idx, term] of maps) mappings.set(idx, term);
