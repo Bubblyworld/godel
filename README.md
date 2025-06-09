@@ -1,6 +1,6 @@
 # Gödel Meets TypeScript
 
-![squirrel](https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ftse3.mm.bing.net%2Fth%3Fid%3DOIP.qnOXFFvpzh4ArqV2NuqF5gHaE8%26pid%3DApi&f=1&ipt=265c16d4a7f965b9255a8ff3bd8f0d6d6e7236617f83d3d643c36b4ae595e1ee&ipo=images)
+![mascot](https://raw.githubusercontent.com/Bubblyworld/godel/master/assets/squirrel.jpg)
 
 This repo contains a proof of Gödel's two incompleteness theorems, written in TypeScript. If you already know what that means and just want to see what this thing does, skip to [usage](#usage). Otherwise, read the [background](#background) first for a somewhat fictitious account of the history of these two theorems.
 
