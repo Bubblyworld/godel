@@ -162,9 +162,12 @@ export class Parser {
     } while (t.kind !== TokenKind.EOF);
 
     // existing bindings for all symbol types
-    // Priority order: constants > functions > relations > variables
-    // This ensures that if there are name conflicts, more "stable" symbols take precedence
-    for (const c of st.consts) this.bindings.set(c.symbol.description!, c);
+    for (const c of st.consts) {
+      const name = c.symbol.description!;
+      if (!this.bindings.has(name)) {
+        this.bindings.set(name, c);
+      }
+    }
     for (const f of st.funs) {
       const name = f.symbol.description!;
       if (!this.bindings.has(name)) {
@@ -177,7 +180,6 @@ export class Parser {
         this.bindings.set(name, r);
       }
     }
-    // For variables, use the first (oldest) occurrence to maintain consistency
     for (const v of st.vars) {
       const name = v.symbol.description!;
       if (!this.bindings.has(name)) {
@@ -195,14 +197,17 @@ export class Parser {
       }
     );
   }
+
   private advance(): Token {
     const tok = this.peek();
     if (tok.kind !== TokenKind.EOF) this.current++;
     return tok;
   }
+
   private match(...k: TokenKind[]): boolean {
     return k.includes(this.peek().kind);
   }
+
   private expect(kind: TokenKind): Token {
     if (!this.match(kind))
       throw new Error(`Expected ${kind} at ${this.peek().pos}`);
@@ -273,10 +278,19 @@ export class Parser {
     if (this.match(TokenKind.FORALL, TokenKind.EXISTS)) {
       const token = this.advance();
       const names = this.parseVariableList();
-      const vars = names.map((n) => add(this.st, SymbolKind.Var, Symbol(n)));
+      const vars = names.map((name) => {
+        let existingVar: SymbolEntry | undefined;
+        try {
+          existingVar = this.expectBinding(name, SymbolKind.Var);
+        } catch (err) {
+          // already bound but not a variable
+        }
+
+        return existingVar ?? add(this.st, SymbolKind.Var, Symbol(name));
+      });
+
       this.expect(TokenKind.DOT);
 
-      // Save original bindings before overwriting with quantified variables
       const originalBindings = new Map<string, SymbolEntry>();
       for (const v of vars) {
         const name = v.symbol.description!;
@@ -289,7 +303,6 @@ export class Parser {
 
       const body = this.parseQuantified();
 
-      // Restore original bindings or delete if none existed
       for (const v of vars) {
         const name = v.symbol.description!;
         const original = originalBindings.get(name);
@@ -439,7 +452,7 @@ function needsParens(child: Formula, parent: Formula): boolean {
   return false;
 }
 
-function renderTerm(t: Term, st: SymbolTable): string {
+export function renderTerm(t: Term, st: SymbolTable): string {
   switch (t.kind) {
     case NodeKind.Var:
       return (

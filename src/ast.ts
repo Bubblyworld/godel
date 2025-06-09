@@ -572,3 +572,104 @@ export function construct<T>(st: SymbolTable, nc: NodeConstructor<T>): T {
     },
   });
 }
+
+/**
+ * Returns the list of free variables in a formula.
+ */
+export function getFreeVars(f: Term | Formula): number[] {
+  const vars: number[] = [];
+  const isBoundVar: Set<number> = new Set();
+  const visitVar = (f: Term & { kind: NodeKind.Var }) => {
+    if (!isBoundVar.has(f.idx)) {
+      vars.push(f.idx);
+    }
+  };
+  const visitQuantifier = (
+    f: Formula & {
+      kind: NodeKind.Exists | NodeKind.ForAll;
+    }
+  ) => {
+    const bound: number[] = [];
+    for (const idx of f.vars) {
+      // edge-case where variable reused
+      if (!isBoundVar.has(idx)) {
+        bound.push(idx);
+        isBoundVar.add(idx);
+      }
+    }
+
+    visit(f.arg, cbs);
+    for (const idx of bound) isBoundVar.delete(idx);
+  };
+  const cbs: VisitFns<void> = {
+    Const: (_f) => {},
+    FunApp: (f) => {
+      f.args.map((t) => visit(t, cbs));
+    },
+    Atom: (f) => {
+      f.args.map((t) => visit(t, cbs));
+    },
+    Not: (f) => {
+      visit(f.arg, cbs);
+    },
+    And: (f) => {
+      visit(f.left, cbs);
+      visit(f.right, cbs);
+    },
+    Or: (f) => {
+      visit(f.left, cbs);
+      visit(f.right, cbs);
+    },
+    Implies: (f) => {
+      visit(f.left, cbs);
+      visit(f.right, cbs);
+    },
+    Var: visitVar,
+    ForAll: visitQuantifier,
+    Exists: visitQuantifier,
+  };
+
+  visit(f, cbs);
+  return vars;
+}
+
+/**
+ * Returns true if the given formulas are equal syntactically.
+ */
+export function equal(f: Formula | Term, g: Formula | Term): boolean {
+  switch (f.kind) {
+    case NodeKind.Var:
+      if (g.kind != NodeKind.Var) return false;
+      return f.idx == g.idx;
+    case NodeKind.Const:
+      if (g.kind != NodeKind.Const) return false;
+      return f.idx == g.idx;
+    case NodeKind.FunApp:
+      if (g.kind != NodeKind.FunApp) return false;
+      return f.idx == g.idx && f.args.every((sub, i) => equal(sub, g.args[i]));
+    case NodeKind.Atom:
+      if (g.kind != NodeKind.Atom) return false;
+      return f.idx == g.idx && f.args.every((sub, i) => equal(sub, g.args[i]));
+    case NodeKind.Not:
+      if (g.kind != NodeKind.Not) return false;
+      return equal(f.arg, g.arg);
+    case NodeKind.And:
+      if (g.kind != NodeKind.And) return false;
+      return equal(f.left, g.left) && equal(f.right, g.right);
+    case NodeKind.Or:
+      if (g.kind != NodeKind.Or) return false;
+      return equal(f.left, g.left) && equal(f.right, g.right);
+    case NodeKind.Implies:
+      if (g.kind != NodeKind.Implies) return false;
+      return equal(f.left, g.left) && equal(f.right, g.right);
+    case NodeKind.ForAll:
+      if (g.kind != NodeKind.ForAll) return false;
+      return f.vars.every((v, i) => v == g.vars[i]) && equal(f.arg, g.arg);
+    case NodeKind.Exists:
+      if (g.kind != NodeKind.Exists) return false;
+      return f.vars.every((v, i) => v == g.vars[i]) && equal(f.arg, g.arg);
+    default:
+      const _exhaustive: never = f;
+      throw new Error(_exhaustive);
+  }
+}
