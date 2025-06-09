@@ -1,6 +1,16 @@
-import { expect } from "chai";
-import { construct, createSymbolTable, NodeKind, render } from "./ast";
-import { transformImpliesToOr, pushNegationsDown, removeDoubleNegations, distributeOrOverAnd, freshenQuantifiers, moveQuantifiersOutside, skolemizeExistentials, removeLeadingUniversals, toCNF } from './cnf';
+import { expect } from 'chai';
+import { construct, createSymbolTable, NodeKind, render } from './ast';
+import {
+  transformImpliesToOr,
+  pushNegationsDown,
+  removeDoubleNegations,
+  distributeOrOverAnd,
+  freshenQuantifiers,
+  moveQuantifiersOutside,
+  skolemizeExistentials,
+  removeLeadingUniversals,
+  toCNF,
+} from './cnf';
 
 describe('cnf.ts', () => {
   it('should convert implications to disjunctions', () => {
@@ -8,11 +18,8 @@ describe('cnf.ts', () => {
     const b = Symbol('b');
     const R = Symbol('R');
     const st = createSymbolTable();
-    const f = construct(st, c => {
-      return c.implies(
-        c.atom(R, c.const(a)),
-        c.atom(R, c.const(b)),
-      );
+    const f = construct(st, (c) => {
+      return c.implies(c.atom(R, c.const(a)), c.atom(R, c.const(b)));
     });
 
     const g = transformImpliesToOr(f);
@@ -25,9 +32,9 @@ describe('cnf.ts', () => {
     const c = Symbol('c');
     const R = Symbol('R');
     const st = createSymbolTable();
-    
+
     // Test (R(a) → R(b)) → R(c)
-    const f = construct(st, builder => {
+    const f = construct(st, (builder) => {
       return builder.implies(
         builder.implies(
           builder.atom(R, builder.const(a)),
@@ -54,9 +61,9 @@ describe('cnf.ts', () => {
     const c = Symbol('c');
     const R = Symbol('R');
     const st = createSymbolTable();
-    
+
     // Test R(a) ∧ (R(b) → R(c))
-    const f = construct(st, builder => {
+    const f = construct(st, (builder) => {
       return builder.and(
         builder.atom(R, builder.const(a)),
         builder.implies(
@@ -80,9 +87,9 @@ describe('cnf.ts', () => {
     const c = Symbol('c');
     const R = Symbol('R');
     const st = createSymbolTable();
-    
+
     // Test R(a) ∨ (R(b) → R(c))
-    const f = construct(st, builder => {
+    const f = construct(st, (builder) => {
       return builder.or(
         builder.atom(R, builder.const(a)),
         builder.implies(
@@ -105,9 +112,9 @@ describe('cnf.ts', () => {
     const b = Symbol('b');
     const R = Symbol('R');
     const st = createSymbolTable();
-    
+
     // Test ¬(R(a) → R(b))
-    const f = construct(st, builder => {
+    const f = construct(st, (builder) => {
       return builder.not(
         builder.implies(
           builder.atom(R, builder.const(a)),
@@ -130,9 +137,9 @@ describe('cnf.ts', () => {
     const d = Symbol('d');
     const R = Symbol('R');
     const st = createSymbolTable();
-    
+
     // Test (R(a) → R(b)) ∧ (R(c) → R(d))
-    const f = construct(st, builder => {
+    const f = construct(st, (builder) => {
       return builder.and(
         builder.implies(
           builder.atom(R, builder.const(a)),
@@ -160,9 +167,9 @@ describe('cnf.ts', () => {
     const R = Symbol('R');
     const S = Symbol('S');
     const st = createSymbolTable();
-    
+
     // Test ((R(a) → S(b)) ∨ R(c)) → (S(a) ∧ R(b))
-    const f = construct(st, builder => {
+    const f = construct(st, (builder) => {
       return builder.implies(
         builder.or(
           builder.implies(
@@ -199,9 +206,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(R(a) ∧ R(b)) becomes ¬R(a) ∨ ¬R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.and(
             builder.atom(R, builder.const(a)),
@@ -229,9 +236,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(R(a) ∨ R(b)) becomes ¬R(a) ∧ ¬R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.or(
             builder.atom(R, builder.const(a)),
@@ -252,9 +259,9 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(∀x R(x)) becomes ∃x ¬R(x)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.forall([x], builder.atom(R, builder.var(x)))
         );
@@ -274,9 +281,9 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(∃x R(x)) becomes ∀x ¬R(x)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.exists([x], builder.atom(R, builder.var(x)))
         );
@@ -298,11 +305,11 @@ describe('cnf.ts', () => {
       const c = Symbol('c');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(R(a) ∧ (R(b) ∨ R(c)))
       // Should become ¬R(a) ∨ ¬(R(b) ∨ R(c))
       // Then become ¬R(a) ∨ (¬R(b) ∧ ¬R(c))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.and(
             builder.atom(R, builder.const(a)),
@@ -330,9 +337,9 @@ describe('cnf.ts', () => {
       const a = Symbol('a');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬R(a) stays ¬R(a)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(builder.atom(R, builder.const(a)));
       });
 
@@ -350,12 +357,10 @@ describe('cnf.ts', () => {
       const a = Symbol('a');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬¬R(a) becomes R(a)
-      const f = construct(st, builder => {
-        return builder.not(
-          builder.not(builder.atom(R, builder.const(a)))
-        );
+      const f = construct(st, (builder) => {
+        return builder.not(builder.not(builder.atom(R, builder.const(a))));
       });
 
       const g = removeDoubleNegations(f);
@@ -367,9 +372,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬¬R(a) ∧ ¬¬R(b) becomes R(a) ∧ R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.not(builder.not(builder.atom(R, builder.const(a)))),
           builder.not(builder.not(builder.atom(R, builder.const(b))))
@@ -389,9 +394,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(¬¬R(a) ∧ R(b)) becomes ¬(R(a) ∧ R(b))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.and(
             builder.not(builder.not(builder.atom(R, builder.const(a)))),
@@ -415,9 +420,9 @@ describe('cnf.ts', () => {
       const a = Symbol('a');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬R(a) stays ¬R(a)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(builder.atom(R, builder.const(a)));
       });
 
@@ -437,9 +442,9 @@ describe('cnf.ts', () => {
       const c = Symbol('c');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∨ (R(b) ∧ R(c)) becomes (R(a) ∨ R(b)) ∧ (R(a) ∨ R(c))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.atom(R, builder.const(a)),
           builder.and(
@@ -463,9 +468,9 @@ describe('cnf.ts', () => {
       const c = Symbol('c');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test (R(a) ∧ R(b)) ∨ R(c) becomes (R(a) ∨ R(c)) ∧ (R(b) ∨ R(c))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.and(
             builder.atom(R, builder.const(a)),
@@ -490,10 +495,10 @@ describe('cnf.ts', () => {
       const d = Symbol('d');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∨ (R(b) ∧ (R(c) ∨ R(d)))
       // Should eventually become CNF form
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.atom(R, builder.const(a)),
           builder.and(
@@ -521,10 +526,10 @@ describe('cnf.ts', () => {
       const d = Symbol('d');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test (R(a) ∨ R(b)) ∨ (R(c) ∧ R(d))
       // Should become ((R(a) ∨ R(b)) ∨ R(c)) ∧ ((R(a) ∨ R(b)) ∨ R(d))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.or(
             builder.atom(R, builder.const(a)),
@@ -546,9 +551,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∨ R(b) stays R(a) ∨ R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.atom(R, builder.const(a)),
           builder.atom(R, builder.const(b))
@@ -571,9 +576,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
           builder.atom(R, builder.const(b))
@@ -589,13 +594,12 @@ describe('cnf.ts', () => {
       const y = Symbol('y');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∃y R(x, y)
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([y], 
-            builder.atom(R, builder.var(x), builder.var(y))
-          )
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists([y], builder.atom(R, builder.var(x), builder.var(y)))
         );
       });
 
@@ -608,10 +612,11 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x (R(x) ∧ ∃x S(x)) - inner x should be renamed
-      const f = construct(st, builder => {
-        return builder.forall([x], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
           builder.and(
             builder.atom(R, builder.var(x)),
             builder.exists([x], builder.atom(S, builder.var(x)))
@@ -620,7 +625,7 @@ describe('cnf.ts', () => {
       });
 
       const g = freshenQuantifiers(f, st);
-      
+
       // The outer structure should be ForAll
       expect(g.kind).to.equal(NodeKind.ForAll);
       if (g.kind === NodeKind.ForAll) {
@@ -640,21 +645,26 @@ describe('cnf.ts', () => {
       const y = Symbol('y');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∀y (R(x, y) ∧ ∃x ∃y R(x, y)) - both inner variables should be renamed
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.forall([y], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.forall(
+            [y],
             builder.and(
               builder.atom(R, builder.var(x), builder.var(y)),
-              builder.exists([x, y], builder.atom(R, builder.var(x), builder.var(y)))
+              builder.exists(
+                [x, y],
+                builder.atom(R, builder.var(x), builder.var(y))
+              )
             )
           )
         );
       });
 
       const g = freshenQuantifiers(f, st);
-      
+
       expect(g.kind).to.equal(NodeKind.ForAll);
       if (g.kind === NodeKind.ForAll) {
         expect(g.arg.kind).to.equal(NodeKind.ForAll);
@@ -668,7 +678,7 @@ describe('cnf.ts', () => {
               const outerYIdx = g.arg.vars[0];
               const innerXIdx = g.arg.arg.right.vars[0];
               const innerYIdx = g.arg.arg.right.vars[1];
-              
+
               expect(innerXIdx).to.not.equal(outerXIdx);
               expect(innerYIdx).to.not.equal(outerYIdx);
             }
@@ -681,20 +691,20 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∃x ∀x R(x) - each subsequent x should be renamed
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([x], 
-            builder.forall([x], 
-              builder.atom(R, builder.var(x))
-            )
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists(
+            [x],
+            builder.forall([x], builder.atom(R, builder.var(x)))
           )
         );
       });
 
       const g = freshenQuantifiers(f, st);
-      
+
       // Extract all variable indices
       const extractVarIndices = (f: any): number[] => {
         if (f.kind === NodeKind.ForAll || f.kind === NodeKind.Exists) {
@@ -706,7 +716,7 @@ describe('cnf.ts', () => {
         }
         return [];
       };
-      
+
       const varIndices = extractVarIndices(g);
       // All three quantified variables should have unique indices
       expect(new Set(varIndices).size).to.equal(3);
@@ -716,10 +726,11 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x (R(x) ∧ ∃x R(x)) - ensure substitution works in atom arguments
-      const f = construct(st, builder => {
-        return builder.forall([x], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
           builder.and(
             builder.atom(R, builder.var(x)),
             builder.exists([x], builder.atom(R, builder.var(x)))
@@ -728,7 +739,7 @@ describe('cnf.ts', () => {
       });
 
       const g = freshenQuantifiers(f, st);
-      
+
       // The outer R(x) should use the outer variable
       // The inner R(x) should use the renamed inner variable
       expect(g.kind).to.equal(NodeKind.ForAll);
@@ -737,7 +748,7 @@ describe('cnf.ts', () => {
         if (g.arg.kind === NodeKind.And) {
           const leftAtom = g.arg.left;
           const rightExists = g.arg.right;
-          
+
           if (leftAtom.kind === NodeKind.Atom && leftAtom.args.length > 0) {
             const firstArg = leftAtom.args[0];
             if (firstArg) {
@@ -747,13 +758,19 @@ describe('cnf.ts', () => {
               }
             }
           }
-          
-          if (rightExists.kind === NodeKind.Exists && rightExists.vars.length > 0) {
+
+          if (
+            rightExists.kind === NodeKind.Exists &&
+            rightExists.vars.length > 0
+          ) {
             const innerVarIdx = rightExists.vars[0];
             if (innerVarIdx !== undefined) {
               expect(innerVarIdx).to.not.equal(outerVarIdx);
-              
-              if (rightExists.arg.kind === NodeKind.Atom && rightExists.arg.args.length > 0) {
+
+              if (
+                rightExists.arg.kind === NodeKind.Atom &&
+                rightExists.arg.args.length > 0
+              ) {
                 const firstArg = rightExists.arg.args[0];
                 if (firstArg) {
                   expect(firstArg.kind).to.equal(NodeKind.Var);
@@ -775,16 +792,21 @@ describe('cnf.ts', () => {
       const S = Symbol('S');
       const T = Symbol('T');
       const st = createSymbolTable();
-      
+
       // Test ∀x (R(x) ∨ ∀y (S(y) ∧ ∃x ∃y T(x, y))) - inner x and y should be renamed
-      const f = construct(st, builder => {
-        return builder.forall([x], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
           builder.or(
             builder.atom(R, builder.var(x)),
-            builder.forall([y], 
+            builder.forall(
+              [y],
               builder.and(
                 builder.atom(S, builder.var(y)),
-                builder.exists([x, y], builder.atom(T, builder.var(x), builder.var(y)))
+                builder.exists(
+                  [x, y],
+                  builder.atom(T, builder.var(x), builder.var(y))
+                )
               )
             )
           )
@@ -792,18 +814,25 @@ describe('cnf.ts', () => {
       });
 
       const g = freshenQuantifiers(f, st);
-      
+
       // Should have unique variables for all quantifiers
       expect(g.kind).to.equal(NodeKind.ForAll);
-      if (g.kind === NodeKind.ForAll && g.arg.kind === NodeKind.Or && g.arg.right.kind === NodeKind.ForAll) {
+      if (
+        g.kind === NodeKind.ForAll &&
+        g.arg.kind === NodeKind.Or &&
+        g.arg.right.kind === NodeKind.ForAll
+      ) {
         const outerX = g.vars[0];
         const outerY = g.arg.right.vars[0];
-        
+
         const innerExists = g.arg.right.arg;
-        if (innerExists.kind === NodeKind.And && innerExists.right.kind === NodeKind.Exists) {
+        if (
+          innerExists.kind === NodeKind.And &&
+          innerExists.right.kind === NodeKind.Exists
+        ) {
           const innerX = innerExists.right.vars[0];
           const innerY = innerExists.right.vars[1];
-          
+
           expect(innerX).to.not.equal(outerX);
           expect(innerY).to.not.equal(outerY);
           expect(innerX).to.not.equal(innerY);
@@ -817,12 +846,15 @@ describe('cnf.ts', () => {
       const z = Symbol('z');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∃y ∀z R(x, y, z) - no conflicts, should remain unchanged
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([y], 
-            builder.forall([z], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists(
+            [y],
+            builder.forall(
+              [z],
               builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
             )
           )
@@ -841,9 +873,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
           builder.atom(R, builder.const(b))
@@ -860,9 +892,9 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ ∀x S(x) → ∀x (R(a) ∧ S(x))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
           builder.forall([x], builder.atom(S, builder.var(x)))
@@ -886,9 +918,9 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x S(x) ∧ R(a) → ∀x (S(x) ∧ R(a))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.forall([x], builder.atom(S, builder.var(x))),
           builder.atom(R, builder.const(a))
@@ -912,9 +944,9 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ ∃x S(x) → ∃x (R(a) ∧ S(x))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
           builder.exists([x], builder.atom(S, builder.var(x)))
@@ -934,9 +966,9 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∨ ∀x S(x) → ∀x (R(a) ∨ S(x))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.atom(R, builder.const(a)),
           builder.forall([x], builder.atom(S, builder.var(x)))
@@ -956,9 +988,9 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∃x S(x) ∨ R(a) → ∃x (S(x) ∨ R(a))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.exists([x], builder.atom(S, builder.var(x))),
           builder.atom(R, builder.const(a))
@@ -980,10 +1012,10 @@ describe('cnf.ts', () => {
       const S = Symbol('S');
       const T = Symbol('T');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ ∀x S(x) ∧ ∃y T(y) → ∃y ∀x (R(a) ∧ S(x) ∧ T(y))
       // This tests multiple passes
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.and(
             builder.atom(R, builder.const(a)),
@@ -995,9 +1027,14 @@ describe('cnf.ts', () => {
 
       const g = moveQuantifiersOutside(f);
       // Should have moved both quantifiers to the outside
-      expect(g.kind === NodeKind.ForAll || g.kind === NodeKind.Exists).to.be.true;
+      expect(g.kind === NodeKind.ForAll || g.kind === NodeKind.Exists).to.be
+        .true;
       if (g.kind === NodeKind.Exists || g.kind === NodeKind.ForAll) {
-        expect(g.arg.kind === NodeKind.ForAll || g.arg.kind === NodeKind.Exists || g.arg.kind === NodeKind.And).to.be.true;
+        expect(
+          g.arg.kind === NodeKind.ForAll ||
+            g.arg.kind === NodeKind.Exists ||
+            g.arg.kind === NodeKind.And
+        ).to.be.true;
       }
     });
 
@@ -1008,16 +1045,15 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ ∀x ∃y S(x, y) → ∀x ∃y (R(a) ∧ S(x, y))
       // Multi-pass algorithm moves all quantifiers to the outside
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
-          builder.forall([x], 
-            builder.exists([y], 
-              builder.atom(S, builder.var(x), builder.var(y))
-            )
+          builder.forall(
+            [x],
+            builder.exists([y], builder.atom(S, builder.var(x), builder.var(y)))
           )
         );
       });
@@ -1045,10 +1081,10 @@ describe('cnf.ts', () => {
       const S = Symbol('S');
       const T = Symbol('T');
       const st = createSymbolTable();
-      
+
       // Test (R(a) ∨ ∀x S(x)) ∧ (∃y T(y) ∨ R(b))
       // Should become ∀x ∃y ((R(a) ∨ S(x)) ∧ (T(y) ∨ R(b)))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.or(
             builder.atom(R, builder.const(a)),
@@ -1063,7 +1099,8 @@ describe('cnf.ts', () => {
 
       const g = moveQuantifiersOutside(f);
       // Should have moved quantifiers to the outside
-      expect(g.kind === NodeKind.ForAll || g.kind === NodeKind.Exists).to.be.true;
+      expect(g.kind === NodeKind.ForAll || g.kind === NodeKind.Exists).to.be
+        .true;
     });
 
     it('should leave already moved quantifiers unchanged', () => {
@@ -1072,11 +1109,13 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∃y (R(x) ∧ S(y)) - already in correct form
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([y], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists(
+            [y],
             builder.and(
               builder.atom(R, builder.var(x)),
               builder.atom(S, builder.var(y))
@@ -1097,9 +1136,9 @@ describe('cnf.ts', () => {
       const b = Symbol('b');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
           builder.atom(R, builder.const(b))
@@ -1114,9 +1153,9 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x R(x)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.forall([x], builder.atom(R, builder.var(x)));
       });
 
@@ -1132,9 +1171,9 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∃x R(x) → R(skolem_0)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.exists([x], builder.atom(R, builder.var(x)));
       });
 
@@ -1150,9 +1189,9 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∃x R(x) → R(c0) where c0 is a constant symbol, not a function
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.exists([x], builder.atom(R, builder.var(x)));
       });
 
@@ -1169,13 +1208,12 @@ describe('cnf.ts', () => {
       const y = Symbol('y');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∃y R(x, y) → ∀x R(x, skolem_0(x))
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([y], 
-            builder.atom(R, builder.var(x), builder.var(y))
-          )
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists([y], builder.atom(R, builder.var(x), builder.var(y)))
         );
       });
 
@@ -1203,11 +1241,13 @@ describe('cnf.ts', () => {
       const z = Symbol('z');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∃y ∃z R(x, y, z) → ∀x R(x, skolem_0(x), skolem_1(x))
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([y, z], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists(
+            [y, z],
             builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
           )
         );
@@ -1224,7 +1264,10 @@ describe('cnf.ts', () => {
           // Second and third args should be different Skolem functions
           expect(g.arg.args[1]?.kind).to.equal(NodeKind.FunApp);
           expect(g.arg.args[2]?.kind).to.equal(NodeKind.FunApp);
-          if (g.arg.args[1]?.kind === NodeKind.FunApp && g.arg.args[2]?.kind === NodeKind.FunApp) {
+          if (
+            g.arg.args[1]?.kind === NodeKind.FunApp &&
+            g.arg.args[2]?.kind === NodeKind.FunApp
+          ) {
             // Should be different function indices
             expect(g.arg.args[1].idx).to.not.equal(g.arg.args[2].idx);
             // Both should depend on x
@@ -1241,12 +1284,15 @@ describe('cnf.ts', () => {
       const z = Symbol('z');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∀y ∃z R(x, y, z) → ∀x ∀y R(x, y, skolem_0(x, y))
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.forall([y], 
-            builder.exists([z], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.forall(
+            [y],
+            builder.exists(
+              [z],
               builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
             )
           )
@@ -1278,15 +1324,19 @@ describe('cnf.ts', () => {
       const R = Symbol('R');
       const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x (R(x) ∧ ∃y S(x, y)) ∧ ∃z R(z)
       // Should become ∀x (R(x) ∧ S(x, skolem_0(x))) ∧ R(skolem_1)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
-          builder.forall([x], 
+          builder.forall(
+            [x],
             builder.and(
               builder.atom(R, builder.var(x)),
-              builder.exists([y], builder.atom(S, builder.var(x), builder.var(y)))
+              builder.exists(
+                [y],
+                builder.atom(S, builder.var(x), builder.var(y))
+              )
             )
           ),
           builder.exists([z], builder.atom(R, builder.var(z)))
@@ -1312,12 +1362,15 @@ describe('cnf.ts', () => {
       const z = Symbol('z');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∃x ∃y ∃z R(x, y, z) → R(skolem_0, skolem_1, skolem_2)
-      const f = construct(st, builder => {
-        return builder.exists([x], 
-          builder.exists([y], 
-            builder.exists([z], 
+      const f = construct(st, (builder) => {
+        return builder.exists(
+          [x],
+          builder.exists(
+            [y],
+            builder.exists(
+              [z],
               builder.atom(R, builder.var(x), builder.var(y), builder.var(z))
             )
           )
@@ -1332,9 +1385,11 @@ describe('cnf.ts', () => {
         expect(g.args[0]?.kind).to.equal(NodeKind.Const);
         expect(g.args[1]?.kind).to.equal(NodeKind.Const);
         expect(g.args[2]?.kind).to.equal(NodeKind.Const);
-        if (g.args[0]?.kind === NodeKind.Const && 
-            g.args[1]?.kind === NodeKind.Const && 
-            g.args[2]?.kind === NodeKind.Const) {
+        if (
+          g.args[0]?.kind === NodeKind.Const &&
+          g.args[1]?.kind === NodeKind.Const &&
+          g.args[2]?.kind === NodeKind.Const
+        ) {
           // Should be different constant indices
           expect(g.args[0].idx).to.not.equal(g.args[1].idx);
           expect(g.args[1].idx).to.not.equal(g.args[2].idx);
@@ -1346,22 +1401,26 @@ describe('cnf.ts', () => {
       const x = Symbol('x');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test that multiple skolemizations create different functions
-      const f1 = construct(st, builder => {
+      const f1 = construct(st, (builder) => {
         return builder.exists([x], builder.atom(R, builder.var(x)));
       });
-      
-      const f2 = construct(st, builder => {
+
+      const f2 = construct(st, (builder) => {
         return builder.exists([x], builder.atom(R, builder.var(x)));
       });
 
       const g1 = skolemizeExistentials(f1, st);
       const g2 = skolemizeExistentials(f2, st);
-      
+
       // Should use different Skolem constant indices
-      if (g1.kind === NodeKind.Atom && g2.kind === NodeKind.Atom &&
-          g1.args[0]?.kind === NodeKind.Const && g2.args[0]?.kind === NodeKind.Const) {
+      if (
+        g1.kind === NodeKind.Atom &&
+        g2.kind === NodeKind.Atom &&
+        g1.args[0]?.kind === NodeKind.Const &&
+        g2.args[0]?.kind === NodeKind.Const
+      ) {
         expect(g1.args[0].idx).to.not.equal(g2.args[0].idx);
       }
     });
@@ -1375,12 +1434,12 @@ describe('cnf.ts', () => {
       const c = Symbol('c');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(¬(R(a) ∧ R(b)) ∨ R(c))
       // Step 1: pushNegationsDown -> ¬¬(R(a) ∧ R(b)) ∧ ¬R(c)
       // Step 2: removeDoubleNegations -> (R(a) ∧ R(b)) ∧ ¬R(c)
       // Step 3: distributeOrOverAnd -> No change needed
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.or(
             builder.not(
@@ -1397,7 +1456,7 @@ describe('cnf.ts', () => {
       let g = pushNegationsDown(f);
       g = removeDoubleNegations(g);
       g = distributeOrOverAnd(g);
-      
+
       expect(g.kind).to.equal(NodeKind.And);
       if (g.kind === NodeKind.And) {
         expect(g.left.kind).to.equal(NodeKind.And);
@@ -1411,11 +1470,11 @@ describe('cnf.ts', () => {
       const c = Symbol('c');
       const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(R(a) ∧ R(b)) ∨ R(c)
       // Step 1: pushNegationsDown -> (¬R(a) ∨ ¬R(b)) ∨ R(c)
       // Step 2: distributeOrOverAnd -> No distribution needed for this form
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.or(
           builder.not(
             builder.and(
@@ -1430,22 +1489,22 @@ describe('cnf.ts', () => {
       let g = pushNegationsDown(f);
       g = removeDoubleNegations(g);
       g = distributeOrOverAnd(g);
-      
+
       // Should end up as (¬R(a) ∨ ¬R(b)) ∨ R(c) which is already in good form
       expect(g.kind).to.equal(NodeKind.Or);
     });
   });
 
   // Tests for removeLeadingUniversals
-  describe("removeLeadingUniversals", () => {
-    it("should leave formulas with no quantifiers unchanged", () => {
-      const a = Symbol("a");
-      const b = Symbol("b");
-      const R = Symbol("R");
+  describe('removeLeadingUniversals', () => {
+    it('should leave formulas with no quantifiers unchanged', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) ∧ R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.atom(R, builder.const(a)),
           builder.atom(R, builder.const(b))
@@ -1456,13 +1515,13 @@ describe('cnf.ts', () => {
       expect(JSON.stringify(g)).to.equal(JSON.stringify(f));
     });
 
-    it("should remove single leading universal quantifier", () => {
-      const x = Symbol("x");
-      const R = Symbol("R");
+    it('should remove single leading universal quantifier', () => {
+      const x = Symbol('x');
+      const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x R(x) → R(x)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.forall([x], builder.atom(R, builder.var(x)));
       });
 
@@ -1474,18 +1533,17 @@ describe('cnf.ts', () => {
       }
     });
 
-    it("should remove multiple leading universal quantifiers", () => {
-      const x = Symbol("x");
-      const y = Symbol("y");
-      const R = Symbol("R");
+    it('should remove multiple leading universal quantifiers', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∀y R(x, y) → R(x, y)
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.forall([y], 
-            builder.atom(R, builder.var(x), builder.var(y))
-          )
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.forall([y], builder.atom(R, builder.var(x), builder.var(y)))
         );
       });
 
@@ -1498,16 +1556,17 @@ describe('cnf.ts', () => {
       }
     });
 
-    it("should leave non-leading quantifiers unchanged", () => {
-      const x = Symbol("x");
-      const y = Symbol("y");
-      const R = Symbol("R");
-      const S = Symbol("S");
+    it('should leave non-leading quantifiers unchanged', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x (R(x) ∧ ∃y S(y)) → R(x) ∧ ∃y S(y)
-      const f = construct(st, builder => {
-        return builder.forall([x], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
           builder.and(
             builder.atom(R, builder.var(x)),
             builder.exists([y], builder.atom(S, builder.var(y)))
@@ -1523,21 +1582,26 @@ describe('cnf.ts', () => {
       }
     });
 
-    it("should handle complex formula with mixed quantifiers", () => {
-      const x = Symbol("x");
-      const y = Symbol("y");
-      const z = Symbol("z");
-      const R = Symbol("R");
-      const S = Symbol("S");
+    it('should handle complex formula with mixed quantifiers', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      const R = Symbol('R');
+      const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x ∀y (R(x) ∨ ∃z S(y, z)) → R(x) ∨ ∃z S(y, z)
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.forall([y], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.forall(
+            [y],
             builder.or(
               builder.atom(R, builder.var(x)),
-              builder.exists([z], builder.atom(S, builder.var(y), builder.var(z)))
+              builder.exists(
+                [z],
+                builder.atom(S, builder.var(y), builder.var(z))
+              )
             )
           )
         );
@@ -1553,15 +1617,15 @@ describe('cnf.ts', () => {
   });
 
   // Tests for toCNF
-  describe("toCNF", () => {
-    it("should convert simple implication to CNF", () => {
-      const a = Symbol("a");
-      const b = Symbol("b");
-      const R = Symbol("R");
+  describe('toCNF', () => {
+    it('should convert simple implication to CNF', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test R(a) → R(b)
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.implies(
           builder.atom(R, builder.const(a)),
           builder.atom(R, builder.const(b))
@@ -1576,16 +1640,17 @@ describe('cnf.ts', () => {
       }
     });
 
-    it("should convert complex formula with quantifiers to CNF", () => {
-      const x = Symbol("x");
-      const y = Symbol("y");
-      const R = Symbol("R");
-      const S = Symbol("S");
+    it('should convert complex formula with quantifiers to CNF', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
+      const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test ∀x (R(x) → ∃y S(x, y))
-      const f = construct(st, builder => {
-        return builder.forall([x], 
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
           builder.implies(
             builder.atom(R, builder.var(x)),
             builder.exists([y], builder.atom(S, builder.var(x), builder.var(y)))
@@ -1601,14 +1666,14 @@ describe('cnf.ts', () => {
       expect(g.kind).to.not.equal(NodeKind.ForAll);
     });
 
-    it("should handle formula with negated conjunction", () => {
-      const a = Symbol("a");
-      const b = Symbol("b");
-      const R = Symbol("R");
+    it('should handle formula with negated conjunction', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const R = Symbol('R');
       const st = createSymbolTable();
-      
+
       // Test ¬(R(a) ∧ R(b))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.not(
           builder.and(
             builder.atom(R, builder.const(a)),
@@ -1626,23 +1691,24 @@ describe('cnf.ts', () => {
       }
     });
 
-    it("should handle complex nested formula", () => {
-      const a = Symbol("a");
-      const b = Symbol("b");
-      const c = Symbol("c");
-      const x = Symbol("x");
-      const R = Symbol("R");
-      const S = Symbol("S");
+    it('should handle complex nested formula', () => {
+      const a = Symbol('a');
+      const b = Symbol('b');
+      const c = Symbol('c');
+      const x = Symbol('x');
+      const R = Symbol('R');
+      const S = Symbol('S');
       const st = createSymbolTable();
-      
+
       // Test (R(a) → R(b)) ∧ ∃x (S(x) → R(c))
-      const f = construct(st, builder => {
+      const f = construct(st, (builder) => {
         return builder.and(
           builder.implies(
             builder.atom(R, builder.const(a)),
             builder.atom(R, builder.const(b))
           ),
-          builder.exists([x], 
+          builder.exists(
+            [x],
             builder.implies(
               builder.atom(S, builder.var(x)),
               builder.atom(R, builder.const(c))
@@ -1658,10 +1724,13 @@ describe('cnf.ts', () => {
       expect(g.kind).to.not.equal(NodeKind.Implies);
       expect(g.kind).to.not.equal(NodeKind.Exists);
       expect(g.kind).to.not.equal(NodeKind.ForAll);
-      
+
       // Should be in CNF form (conjunction of disjunctions or single atoms/negated atoms)
       const isCNF = (f: any): boolean => {
-        if (f.kind === NodeKind.Atom || (f.kind === NodeKind.Not && f.arg.kind === NodeKind.Atom)) {
+        if (
+          f.kind === NodeKind.Atom ||
+          (f.kind === NodeKind.Not && f.arg.kind === NodeKind.Atom)
+        ) {
           return true;
         }
         if (f.kind === NodeKind.Or) {
@@ -1675,27 +1744,26 @@ describe('cnf.ts', () => {
         }
         return false;
       };
-      
+
       expect(isCNF(g)).to.be.true;
     });
 
-    it("should produce equisatisfiable formula", () => {
-      const x = Symbol("x");
-      const y = Symbol("y");
-      const R = Symbol("R");
+    it('should produce equisatisfiable formula', () => {
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const R = Symbol('R');
       const st = createSymbolTable();
-      
-      // Test ∀x ∃y R(x, y) 
-      const f = construct(st, builder => {
-        return builder.forall([x], 
-          builder.exists([y], 
-            builder.atom(R, builder.var(x), builder.var(y))
-          )
+
+      // Test ∀x ∃y R(x, y)
+      const f = construct(st, (builder) => {
+        return builder.forall(
+          [x],
+          builder.exists([y], builder.atom(R, builder.var(x), builder.var(y)))
         );
       });
 
       const g = toCNF(f, st);
-      
+
       // The result should be R(x, F0(x)) where F0 is a Skolem function
       expect(g.kind).to.equal(NodeKind.Atom);
       if (g.kind === NodeKind.Atom) {

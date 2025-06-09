@@ -7,9 +7,21 @@ describe('parse.ts', () => {
   describe('Lexer', () => {
     it('should tokenize simple identifiers', () => {
       const lexer = new Lexer('abc def');
-      expect(lexer.nextToken()).to.deep.equal({ kind: TokenKind.IDENTIFIER, value: 'abc', pos: 0 });
-      expect(lexer.nextToken()).to.deep.equal({ kind: TokenKind.IDENTIFIER, value: 'def', pos: 4 });
-      expect(lexer.nextToken()).to.deep.equal({ kind: TokenKind.EOF, value: '', pos: 7 });
+      expect(lexer.nextToken()).to.deep.equal({
+        kind: TokenKind.IDENTIFIER,
+        value: 'abc',
+        pos: 0,
+      });
+      expect(lexer.nextToken()).to.deep.equal({
+        kind: TokenKind.IDENTIFIER,
+        value: 'def',
+        pos: 4,
+      });
+      expect(lexer.nextToken()).to.deep.equal({
+        kind: TokenKind.EOF,
+        value: '',
+        pos: 7,
+      });
     });
 
     it('should tokenize operators', () => {
@@ -53,12 +65,13 @@ describe('parse.ts', () => {
 
     it('should parse atoms with arguments', () => {
       const st = createSymbolTable();
-      const f = parseFormula('P(x, y)', st);
+      const f = parseFormula('P(x, y, a)', st);
       expect(f.kind).to.equal(NodeKind.Atom);
       if (f.kind === NodeKind.Atom) {
-        expect(f.args.length).to.equal(2);
-        expect(f.args[0]?.kind).to.equal(NodeKind.Const);
-        expect(f.args[1]?.kind).to.equal(NodeKind.Const);
+        expect(f.args.length).to.equal(3);
+        expect(f.args[0]?.kind).to.equal(NodeKind.Var);
+        expect(f.args[1]?.kind).to.equal(NodeKind.Var);
+        expect(f.args[2]?.kind).to.equal(NodeKind.Const);
       }
     });
 
@@ -135,11 +148,11 @@ describe('parse.ts', () => {
     it('should have OR bind tighter than AND', () => {
       const st = createSymbolTable();
       const f = parseFormula('P | Q & R', st);
-      // Should parse as P | (Q & R) because OR binds tighter
-      expect(f.kind).to.equal(NodeKind.Or);
-      if (f.kind === NodeKind.Or) {
-        expect(f.left.kind).to.equal(NodeKind.Atom);
-        expect(f.right.kind).to.equal(NodeKind.And);
+      // Should parse as (P | Q) & R because OR binds tighter
+      expect(f.kind).to.equal(NodeKind.And);
+      if (f.kind === NodeKind.And) {
+        expect(f.left.kind).to.equal(NodeKind.Or);
+        expect(f.right.kind).to.equal(NodeKind.Atom);
       }
     });
 
@@ -168,14 +181,18 @@ describe('parse.ts', () => {
     it('should handle complex precedence', () => {
       const st = createSymbolTable();
       const f = parseFormula('!P | Q & R -> S', st);
-      // Should parse as (¬P ∨ (Q ∧ R)) → S because OR binds tighter than AND
+      // Should parse as ((¬P ∨ Q) ∧ R) → S
       expect(f.kind).to.equal(NodeKind.Implies);
       if (f.kind === NodeKind.Implies) {
-        expect(f.left.kind).to.equal(NodeKind.Or);
+        expect(f.left.kind).to.equal(NodeKind.And);
         expect(f.right.kind).to.equal(NodeKind.Atom);
-        if (f.left.kind === NodeKind.Or) {
-          expect(f.left.left.kind).to.equal(NodeKind.Not);
-          expect(f.left.right.kind).to.equal(NodeKind.And);
+        if (f.left.kind === NodeKind.And) {
+          expect(f.left.left.kind).to.equal(NodeKind.Or);
+          expect(f.left.right.kind).to.equal(NodeKind.Atom);
+          if (f.left.left.kind === NodeKind.Or) {
+            expect(f.left.left.left.kind).to.equal(NodeKind.Not);
+            expect(f.left.left.right.kind).to.equal(NodeKind.Atom);
+          }
         }
       }
     });
@@ -236,7 +253,7 @@ describe('parse.ts', () => {
       const st = createSymbolTable();
       const f1 = parseFormula('∀x.P(x)', st);
       expect(f1.kind).to.equal(NodeKind.ForAll);
-      
+
       const f2 = parseFormula('∃x.P(x)', st);
       expect(f2.kind).to.equal(NodeKind.Exists);
     });
@@ -324,10 +341,10 @@ describe('parse.ts', () => {
       const st = createSymbolTable();
       const f1 = parseFormula('P & Q', st);
       expect(renderFormula(f1, st)).to.equal('P ∧ Q');
-      
+
       const f2 = parseFormula('P | Q', st);
       expect(renderFormula(f2, st)).to.equal('P ∨ Q');
-      
+
       const f3 = parseFormula('P -> Q', st);
       expect(renderFormula(f3, st)).to.equal('P → Q');
     });
@@ -336,21 +353,19 @@ describe('parse.ts', () => {
       const st = createSymbolTable();
       const f1 = parseFormula('forall x.P(x)', st);
       expect(renderFormula(f1, st)).to.equal('∀x.P(x)');
-      
+
       const f2 = parseFormula('exists x.P(x)', st);
       expect(renderFormula(f2, st)).to.equal('∃x.P(x)');
     });
 
     it('should add minimal brackets based on precedence', () => {
       const st = createSymbolTable();
-      
-      // OR binds tighter than AND, so no brackets needed
+
       const f1 = parseFormula('P | Q & R', st);
       expect(renderFormula(f1, st)).to.equal('P ∨ Q ∧ R');
-      
-      // When precedence requires brackets  
+
       const f2 = parseFormula('(P | Q) & R', st);
-      expect(renderFormula(f2, st)).to.equal('(P ∨ Q) ∧ R');
+      expect(renderFormula(f2, st)).to.equal('P ∨ Q ∧ R');
     });
 
     it('should handle complex formulas with minimal brackets', () => {
@@ -390,7 +405,7 @@ describe('parse.ts', () => {
       'P(f(g(x)))',
     ];
 
-    testCases.forEach(testCase => {
+    testCases.forEach((testCase) => {
       it(`should round-trip: ${testCase}`, () => {
         const st = createSymbolTable();
         const parsed = parseFormula(testCase, st);
@@ -399,7 +414,7 @@ describe('parse.ts', () => {
         // Parse the rendered version and check it's equivalent
         const st2 = createSymbolTable();
         const reparsed = parseFormula(rendered, st2);
-        
+
         // The structures should be equivalent (we can't easily compare symbol tables)
         expect(JSON.stringify(parsed)).to.not.throw;
         expect(JSON.stringify(reparsed)).to.not.throw;
@@ -434,19 +449,19 @@ describe('parse.ts', () => {
   describe('Integration with AST', () => {
     it('should produce equivalent results to manual AST construction', () => {
       const st = createSymbolTable();
-      
+
       // Manually construct P(x) & Q(x)
-      const manual = construct(st, builder => {
+      const manual = construct(st, (builder) => {
         return builder.and(
           builder.atom(Symbol('P'), builder.var(Symbol('x'))),
           builder.atom(Symbol('Q'), builder.var(Symbol('x')))
         );
       });
-      
+
       // Parse the same formula
       const st2 = createSymbolTable();
       const parsed = parseFormula('P(x) & Q(x)', st2);
-      
+
       // Should have the same structure
       expect(parsed.kind).to.equal(manual.kind);
       expect(parsed.kind).to.equal(NodeKind.And);
@@ -455,11 +470,11 @@ describe('parse.ts', () => {
     it('should parse simple identifiers as constants, not nullary functions', () => {
       const st = createSymbolTable();
       const f = parseFormula('P', st);
-      
+
       expect(f.kind).to.equal(NodeKind.Atom);
       if (f.kind === NodeKind.Atom) {
         expect(f.args.length).to.equal(0);
-        
+
         // Check that P was added as a relation, not a function
         // and that there are no functions in the symbol table
         expect(st.rels.length).to.equal(1);

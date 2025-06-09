@@ -1,11 +1,23 @@
-import { add, Formula, NodeKind, render, resolve, SymbolKind, SymbolTable, Term, transform, TransformFns, visit } from "./ast";
+import {
+  add,
+  Formula,
+  NodeKind,
+  render,
+  resolve,
+  SymbolKind,
+  SymbolTable,
+  Term,
+  transform,
+  TransformFns,
+  visit,
+} from './ast';
 
 /**
  * Converts all instances of A→B to ¬A∨B.
  */
 export function transformImpliesToOr(f: Formula): Formula {
   const cbs: TransformFns = {
-    Implies: f => ({
+    Implies: (f) => ({
       kind: NodeKind.Or,
       right: transform(f.right, cbs),
       left: {
@@ -25,7 +37,7 @@ export function pushNegationsDown(f: Formula): Formula {
   let touched = false;
   const singlePass = (f: Formula): Formula => {
     const cbs: TransformFns = {
-      Not: f => {
+      Not: (f) => {
         switch (f.arg.kind) {
           case NodeKind.And:
             // ¬(A ∧ B) → (¬A ∨ ¬B)
@@ -67,10 +79,10 @@ export function pushNegationsDown(f: Formula): Formula {
         }
       },
     };
-    
+
     return transform(f, cbs);
   };
-  
+
   do {
     touched = false;
     f = singlePass(f);
@@ -83,7 +95,7 @@ export function pushNegationsDown(f: Formula): Formula {
  */
 export function removeDoubleNegations(f: Formula): Formula {
   const cbs: TransformFns = {
-    Not: f => {
+    Not: (f) => {
       if (f.arg.kind === NodeKind.Not) {
         // ¬¬A → A
         return transform(f.arg.arg, cbs);
@@ -94,7 +106,7 @@ export function removeDoubleNegations(f: Formula): Formula {
       };
     },
   };
-  
+
   return transform(f, cbs);
 }
 
@@ -105,14 +117,22 @@ export function distributeOrOverAnd(f: Formula): Formula {
   let touched = false;
   const singlePass = (f: Formula): Formula => {
     const cbs: TransformFns = {
-      Or: f => {
+      Or: (f) => {
         // A ∨ (B ∧ C) → (A ∨ B) ∧ (A ∨ C)
         if (f.right.kind === NodeKind.And) {
           touched = true;
           return {
             kind: NodeKind.And,
-            left: { kind: NodeKind.Or, left: transform(f.left, cbs), right: transform(f.right.left, cbs) },
-            right: { kind: NodeKind.Or, left: transform(f.left, cbs), right: transform(f.right.right, cbs) },
+            left: {
+              kind: NodeKind.Or,
+              left: transform(f.left, cbs),
+              right: transform(f.right.left, cbs),
+            },
+            right: {
+              kind: NodeKind.Or,
+              left: transform(f.left, cbs),
+              right: transform(f.right.right, cbs),
+            },
           };
         }
         // (B ∧ C) ∨ A → (B ∨ A) ∧ (C ∨ A)
@@ -120,8 +140,16 @@ export function distributeOrOverAnd(f: Formula): Formula {
           touched = true;
           return {
             kind: NodeKind.And,
-            left: { kind: NodeKind.Or, left: transform(f.left.left, cbs), right: transform(f.right, cbs) },
-            right: { kind: NodeKind.Or, left: transform(f.left.right, cbs), right: transform(f.right, cbs) },
+            left: {
+              kind: NodeKind.Or,
+              left: transform(f.left.left, cbs),
+              right: transform(f.right, cbs),
+            },
+            right: {
+              kind: NodeKind.Or,
+              left: transform(f.left.right, cbs),
+              right: transform(f.right, cbs),
+            },
           };
         }
         // No distribution needed, just transform children
@@ -132,14 +160,14 @@ export function distributeOrOverAnd(f: Formula): Formula {
         };
       },
     };
-    
+
     return transform(f, cbs);
   };
-  
+
   do {
     touched = false;
     f = singlePass(f);
-  } while(touched);
+  } while (touched);
   return f;
 }
 
@@ -159,15 +187,17 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
   };
 
   const scope: number[] = [];
-  const transformQuantifier = (f: Formula & {
-    kind: NodeKind.Exists | NodeKind.ForAll,
-  }) => {
+  const transformQuantifier = (
+    f: Formula & {
+      kind: NodeKind.Exists | NodeKind.ForAll;
+    }
+  ) => {
     if (f.kind === NodeKind.ForAll) {
       const len = scope.length;
       scope.push(...f.vars);
       const arg = transform(f.arg, cbs);
       scope.length = len;
-      
+
       return {
         kind: NodeKind.ForAll,
         vars: f.vars,
@@ -177,7 +207,7 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
       const maps: [number, Term][] = [];
       for (const idx of f.vars) {
         const sym = Symbol(`F${skolemCounter++}`);
-        
+
         if (scope.length === 0) {
           const constEntry = add(st, SymbolKind.Const, sym);
           const term: Term = {
@@ -190,12 +220,12 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
           const term: Term = {
             idx: func.idx,
             kind: NodeKind.FunApp,
-            args: scope.map(idx => ({ kind: NodeKind.Var, idx }))
+            args: scope.map((idx) => ({ kind: NodeKind.Var, idx })),
           };
           maps.push([idx, term]);
         }
       }
-      
+
       for (const [idx, term] of maps) mappings.set(idx, term);
       const arg = transform(f.arg, cbs);
       for (const [idx, _] of maps) mappings.delete(idx);
@@ -223,7 +253,7 @@ let freshenCounter = 0;
 export function freshenQuantifiers(
   f: Formula,
   st: SymbolTable,
-  byName: boolean = false,
+  byName: boolean = false
 ): Formula {
   const mappings: Map<number, number> = new Map();
   const transformVar = (f: Term & { kind: NodeKind.Var }) => ({
@@ -232,9 +262,11 @@ export function freshenQuantifiers(
   });
 
   const visited: Set<number | string> = new Set();
-  const transformQuantifier = (f: Formula & {
-    kind: NodeKind.Exists | NodeKind.ForAll,
-  }) => {
+  const transformQuantifier = (
+    f: Formula & {
+      kind: NodeKind.Exists | NodeKind.ForAll;
+    }
+  ) => {
     const vars: number[] = [];
     const maps: [number, number][] = [];
     for (const idx of f.vars) {
@@ -245,7 +277,7 @@ export function freshenQuantifiers(
         const sym = Symbol(`${node.symbol.description}${freshenCounter++}`);
         const ent = add(st, SymbolKind.Var, sym);
         vars.push(ent.idx);
-        maps.push([idx, ent.idx]); 
+        maps.push([idx, ent.idx]);
       } else {
         vars.push(idx);
       }
@@ -260,7 +292,7 @@ export function freshenQuantifiers(
     return {
       ...f,
       vars,
-      arg, 
+      arg,
     };
   };
 
@@ -282,9 +314,12 @@ export function moveQuantifiersOutside(f: Formula): Formula {
   let touched = false;
   const singlePass = (f: Formula): Formula => {
     const cbs: TransformFns = {
-      And: f => {
+      And: (f) => {
         // A ∧ ∀x B → ∀x (A ∧ B) or A ∧ ∃x B → ∃x (A ∧ B)
-        if (f.right.kind === NodeKind.ForAll || f.right.kind === NodeKind.Exists) {
+        if (
+          f.right.kind === NodeKind.ForAll ||
+          f.right.kind === NodeKind.Exists
+        ) {
           touched = true;
           return {
             kind: f.right.kind,
@@ -297,7 +332,10 @@ export function moveQuantifiersOutside(f: Formula): Formula {
           };
         }
         // ∀x A ∧ B → ∀x (A ∧ B) or ∃x A ∧ B → ∃x (A ∧ B)
-        if (f.left.kind === NodeKind.ForAll || f.left.kind === NodeKind.Exists) {
+        if (
+          f.left.kind === NodeKind.ForAll ||
+          f.left.kind === NodeKind.Exists
+        ) {
           touched = true;
           return {
             kind: f.left.kind,
@@ -315,9 +353,12 @@ export function moveQuantifiersOutside(f: Formula): Formula {
           right: transform(f.right, cbs),
         };
       },
-      Or: f => {
+      Or: (f) => {
         // A ∨ ∀x B → ∀x (A ∨ B) or A ∨ ∃x B → ∃x (A ∨ B)
-        if (f.right.kind === NodeKind.ForAll || f.right.kind === NodeKind.Exists) {
+        if (
+          f.right.kind === NodeKind.ForAll ||
+          f.right.kind === NodeKind.Exists
+        ) {
           touched = true;
           return {
             kind: f.right.kind,
@@ -330,7 +371,10 @@ export function moveQuantifiersOutside(f: Formula): Formula {
           };
         }
         // ∀x A ∨ B → ∀x (A ∨ B) or ∃x A ∨ B → ∃x (A ∨ B)
-        if (f.left.kind === NodeKind.ForAll || f.left.kind === NodeKind.Exists) {
+        if (
+          f.left.kind === NodeKind.ForAll ||
+          f.left.kind === NodeKind.Exists
+        ) {
           touched = true;
           return {
             kind: f.left.kind,
@@ -349,14 +393,14 @@ export function moveQuantifiersOutside(f: Formula): Formula {
         };
       },
     };
-    
+
     return transform(f, cbs);
   };
-  
+
   do {
     touched = false;
     f = singlePass(f);
-  } while(touched);
+  } while (touched);
   return f;
 }
 

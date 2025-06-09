@@ -1,28 +1,37 @@
-import { Formula, Term, NodeKind, SymbolTable, add, SymbolKind, resolve, SymbolEntry } from './ast';
+import {
+  Formula,
+  Term,
+  NodeKind,
+  SymbolTable,
+  add,
+  SymbolKind,
+  resolve,
+  SymbolEntry,
+} from './ast';
 
 /**
- * Token types for the parser
+ * Token types for the lexer.
  */
 export enum TokenKind {
   // Literals
   IDENTIFIER = 'IDENTIFIER',
-  
-  // Operators - in precedence order (tightest first)
-  NOT = 'NOT',           // ! ¬
-  OR = 'OR',             // | ∨  
-  AND = 'AND',           // & ∧
-  IMPLIES = 'IMPLIES',   // -> →
-  
-  // Quantifiers
-  FORALL = 'FORALL',     // forall ∀
-  EXISTS = 'EXISTS',     // exists ∃
-  
+
+  // Operators – precedence (highest ➜ lowest): NOT > OR > AND > IMPLIES > (QUANTIFIERS)
+  NOT = 'NOT', // ! ¬
+  OR = 'OR', // | ∨  (clause‑first, binds *tighter* than ∧)
+  AND = 'AND', // & ∧
+  IMPLIES = 'IMPLIES', // -> → (right‑associative)
+
+  // Quantifiers (weakest – bind the *loosest*)
+  FORALL = 'FORALL', // forall ∀
+  EXISTS = 'EXISTS', // exists ∃
+
   // Punctuation
-  LPAREN = 'LPAREN',     // (
-  RPAREN = 'RPAREN',     // )
-  COMMA = 'COMMA',       // ,
-  DOT = 'DOT',           // .
-  
+  LPAREN = 'LPAREN', // (
+  RPAREN = 'RPAREN', // )
+  COMMA = 'COMMA', // ,
+  DOT = 'DOT', // .
+
   // Special
   EOF = 'EOF',
 }
@@ -36,490 +45,440 @@ export interface Token {
 export class Lexer {
   private pos = 0;
   private current = '';
-  
-  constructor(private input: string) {
+  constructor(private readonly input: string) {
     this.advance();
   }
-  
+
   private advance(): void {
-    this.current = this.pos < this.input.length ? this.input.charAt(this.pos++) : '';
+    this.current =
+      this.pos < this.input.length ? this.input.charAt(this.pos++) : '';
   }
-  
   private peek(): string {
     return this.pos < this.input.length ? this.input.charAt(this.pos) : '';
   }
-  
-  private skipWhitespace(): void {
-    while (this.current && /\s/.test(this.current)) {
-      this.advance();
-    }
+  private skipWs(): void {
+    while (this.current && /\s/.test(this.current)) this.advance();
   }
-  
+
   private readIdentifier(): string {
-    let result = '';
-    while (this.current && /[a-zA-Z0-9_]/.test(this.current)) {
-      result += this.current;
+    let out = '';
+    while (this.current && /[A-Za-z0-9_]/.test(this.current)) {
+      out += this.current;
       this.advance();
     }
-    return result;
+    return out;
   }
-  
+
   public nextToken(): Token {
-    this.skipWhitespace();
-    
-    if (!this.current) {
-      return { kind: TokenKind.EOF, value: '', pos: this.pos };
-    }
-    
-    const startPos = this.pos - 1;
-    
+    this.skipWs();
+    if (!this.current) return { kind: TokenKind.EOF, value: '', pos: this.pos };
+    const start = this.pos - 1;
+
     switch (this.current) {
       case '(':
         this.advance();
-        return { kind: TokenKind.LPAREN, value: '(', pos: startPos };
+        return { kind: TokenKind.LPAREN, value: '(', pos: start };
       case ')':
         this.advance();
-        return { kind: TokenKind.RPAREN, value: ')', pos: startPos };
+        return { kind: TokenKind.RPAREN, value: ')', pos: start };
       case ',':
         this.advance();
-        return { kind: TokenKind.COMMA, value: ',', pos: startPos };
+        return { kind: TokenKind.COMMA, value: ',', pos: start };
       case '.':
         this.advance();
-        return { kind: TokenKind.DOT, value: '.', pos: startPos };
+        return { kind: TokenKind.DOT, value: '.', pos: start };
       case '!':
       case '¬':
         this.advance();
-        return { kind: TokenKind.NOT, value: this.input.charAt(startPos), pos: startPos };
-      case '&':
-      case '∧':
-        this.advance();
-        return { kind: TokenKind.AND, value: this.input.charAt(startPos), pos: startPos };
+        return {
+          kind: TokenKind.NOT,
+          value: this.input.charAt(start),
+          pos: start,
+        };
       case '|':
       case '∨':
         this.advance();
-        return { kind: TokenKind.OR, value: this.input.charAt(startPos), pos: startPos };
-      case '∀':
+        return {
+          kind: TokenKind.OR,
+          value: this.input.charAt(start),
+          pos: start,
+        };
+      case '&':
+      case '∧':
         this.advance();
-        return { kind: TokenKind.FORALL, value: '∀', pos: startPos };
-      case '∃':
-        this.advance();
-        return { kind: TokenKind.EXISTS, value: '∃', pos: startPos };
+        return {
+          kind: TokenKind.AND,
+          value: this.input.charAt(start),
+          pos: start,
+        };
       case '→':
         this.advance();
-        return { kind: TokenKind.IMPLIES, value: '→', pos: startPos };
+        return { kind: TokenKind.IMPLIES, value: '→', pos: start };
+      case '∀':
+        this.advance();
+        return { kind: TokenKind.FORALL, value: '∀', pos: start };
+      case '∃':
+        this.advance();
+        return { kind: TokenKind.EXISTS, value: '∃', pos: start };
     }
-    
+
     if (this.current === '-' && this.peek() === '>') {
-      this.advance(); // -
-      this.advance(); // >
-      return { kind: TokenKind.IMPLIES, value: '->', pos: startPos };
+      this.advance();
+      this.advance();
+      return { kind: TokenKind.IMPLIES, value: '->', pos: start };
     }
-    
-    if (/[a-zA-Z\+\-\*]/.test(this.current)) {
-      const value = this.readIdentifier();
-      
-      switch (value.toLowerCase()) {
+
+    if (/[A-Za-z]/.test(this.current)) {
+      const id = this.readIdentifier();
+      switch (id.toLowerCase()) {
         case 'forall':
-          return { kind: TokenKind.FORALL, value, pos: startPos };
+          return { kind: TokenKind.FORALL, value: id, pos: start };
         case 'exists':
-          return { kind: TokenKind.EXISTS, value, pos: startPos };
+          return { kind: TokenKind.EXISTS, value: id, pos: start };
         default:
-          return { kind: TokenKind.IDENTIFIER, value, pos: startPos };
+          return { kind: TokenKind.IDENTIFIER, value: id, pos: start };
       }
     }
-    
-    throw new Error(`Unexpected character '${this.current}' at position ${startPos}`);
+
+    throw new Error(
+      `Unexpected character '${this.current}' at position ${start}`
+    );
   }
 }
 
 export class Parser {
   private current = 0;
-  private tokens: Token[] = [];
-  private bindings: Map<string, SymbolEntry> = new Map();
-  
+  private readonly tokens: Token[] = [];
+  private readonly bindings: Map<string, SymbolEntry> = new Map();
+
   constructor(
-    private readonly lexer: Lexer,
-    private readonly st: SymbolTable,
+    lexer: Lexer,
+    private readonly st: SymbolTable
   ) {
-    let token;
+    let t;
     do {
-      token = this.lexer.nextToken();
-      this.tokens.push(token);
-    } while (token.kind !== TokenKind.EOF);
+      t = lexer.nextToken();
+      this.tokens.push(t);
+    } while (t.kind !== TokenKind.EOF);
+
+    // existing bindings for constant/function/relation symbols
+    for (const c of st.consts) this.bindings.set(c.symbol.description!, c);
+    for (const f of st.funs) this.bindings.set(f.symbol.description!, f);
+    for (const r of st.rels) this.bindings.set(r.symbol.description!, r);
   }
-  
+
   private peek(): Token {
-    return this.tokens[this.current] || { kind: TokenKind.EOF, value: '', pos: -1 };
+    return (
+      this.tokens[this.current] ?? {
+        kind: TokenKind.EOF,
+        value: '',
+        pos: this.tokens.at(-1)?.pos ?? -1,
+      }
+    );
   }
-  
   private advance(): Token {
-    const token = this.peek();
-    if (token.kind !== TokenKind.EOF) this.current++;
-    return token;
+    const tok = this.peek();
+    if (tok.kind !== TokenKind.EOF) this.current++;
+    return tok;
   }
-  
+  private match(...k: TokenKind[]): boolean {
+    return k.includes(this.peek().kind);
+  }
   private expect(kind: TokenKind): Token {
-    const token = this.peek();
-    if (token.kind !== kind) {
-      throw new Error(`Expected ${kind} but got ${token.kind} at position ${token.pos}`);
-    }
+    if (!this.match(kind))
+      throw new Error(`Expected ${kind} at ${this.peek().pos}`);
     return this.advance();
   }
-  
-  private match(...kinds: TokenKind[]): boolean {
-    return kinds.includes(this.peek().kind);
+
+  private expectBinding(
+    name: string,
+    ...kinds: SymbolKind[]
+  ): SymbolEntry | undefined {
+    const b = this.bindings.get(name);
+    if (!b) return undefined;
+    if (!kinds.includes(b.kind))
+      throw new Error(
+        `Identifier ${name} already bound as different symbol kind`
+      );
+    return b;
   }
 
-  private expectBinding(name: string, ...kinds: SymbolKind[]): SymbolEntry | undefined {
-    const binding = this.bindings.get(name);
-    if (!binding) {
-      return undefined;
-    }
-    if (kinds.every(kind => binding.kind != kind)) {
-      throw new Error(`Expected ${name} to be bound to be in ${
-        kinds.join(' | ')} but got: ${binding.kind}`);
-    }
-
-    return binding;
-  }
-
-  ////////////////////////
-  // Main entry points: //
-  ////////////////////////
-  
   public parseFormula(): Formula {
-    const formula = this.parseImplication();
-    if (this.peek().kind !== TokenKind.EOF) {
-      throw new Error(`Unexpected token ${this.peek().kind} at position ${this.peek().pos}`);
-    }
-    return formula;
+    const f = this.parseImplication();
+    if (this.peek().kind !== TokenKind.EOF)
+      throw new Error(
+        `Unexpected '${this.peek().value}' at ${this.peek().pos}`
+      );
+    return f;
   }
-  
+
   private parseImplication(): Formula {
-    let left = this.parseDisjunction();
-    
+    let left = this.parseAnd();
     while (this.match(TokenKind.IMPLIES)) {
       this.advance();
-      const right = this.parseImplication();
+      const right = this.parseImplication(); // right‑associative
       left = { kind: NodeKind.Implies, left, right };
     }
-    
     return left;
   }
 
-  private parseConjunction(): Formula {
-    let left = this.parseNegation();
-    
+  private parseAnd(): Formula {
+    let left = this.parseOr();
     while (this.match(TokenKind.AND)) {
       this.advance();
-      const right = this.parseNegation();
+      const right = this.parseOr();
       left = { kind: NodeKind.And, left, right };
     }
-    
     return left;
   }
-  
-  private parseDisjunction(): Formula {
-    let left = this.parseConjunction();
-    
+
+  private parseOr(): Formula {
+    let left = this.parseNegation();
     while (this.match(TokenKind.OR)) {
       this.advance();
-      const right = this.parseConjunction();
+      const right = this.parseNegation();
       left = { kind: NodeKind.Or, left, right };
     }
-    
     return left;
   }
-  
+
   private parseNegation(): Formula {
     if (this.match(TokenKind.NOT)) {
       this.advance();
-      const arg = this.parseNegation();
-      return { kind: NodeKind.Not, arg };
+      return { kind: NodeKind.Not, arg: this.parseNegation() };
     }
-    
     return this.parseQuantified();
   }
-  
+
   private parseQuantified(): Formula {
     if (this.match(TokenKind.FORALL, TokenKind.EXISTS)) {
       const token = this.advance();
-      const varList = this.parseVariableList();
-      const vars = varList.map(name => {
-        return add(this.st, SymbolKind.Var, Symbol(name));
-      });
-
+      const names = this.parseVariableList();
+      const vars = names.map((n) => add(this.st, SymbolKind.Var, Symbol(n)));
       this.expect(TokenKind.DOT);
-
       for (const v of vars) this.bindings.set(v.symbol.description!, v);
-      const arg = this.parseQuantifiedBody();
+      const body = this.parseQuantified();
       for (const v of vars) this.bindings.delete(v.symbol.description!);
-      
-      const idxs = vars.map(node => node.idx);
-      if (token.kind === TokenKind.FORALL) {
-        return { kind: NodeKind.ForAll, vars: idxs, arg };
-      } else {
-        return { kind: NodeKind.Exists, vars: idxs, arg };
-      }
+      const idxs = vars.map((v) => v.idx);
+      return token.kind === TokenKind.FORALL
+        ? { kind: NodeKind.ForAll, vars: idxs, arg: body }
+        : { kind: NodeKind.Exists, vars: idxs, arg: body };
     }
-    
     return this.parseAtom();
   }
-  
-  private parseQuantifiedBody(): Formula {
-    if (this.match(TokenKind.LPAREN)) {
-      return this.parseParenthesized();
-    }
-    
-    if (this.match(TokenKind.FORALL, TokenKind.EXISTS)) {
-      return this.parseQuantified();
-    }
-    
-    return this.parseAtom();
-  }
-  
+
   private parseVariableList(): string[] {
-    const vars: string[] = [];
-    vars.push(this.expect(TokenKind.IDENTIFIER).value);
-    
+    const names: string[] = [];
+    names.push(this.expect(TokenKind.IDENTIFIER).value);
     while (this.match(TokenKind.COMMA)) {
       this.advance();
-      vars.push(this.expect(TokenKind.IDENTIFIER).value);
+      names.push(this.expect(TokenKind.IDENTIFIER).value);
     }
-    
-    return vars;
+    return names;
   }
-  
+
   private parseAtom(): Formula {
-    if (this.match(TokenKind.LPAREN)) {
-      return this.parseParenthesized();
-    }
-    
+    if (this.match(TokenKind.LPAREN)) return this.parseParenthesised();
     if (this.match(TokenKind.IDENTIFIER)) {
-      const name = this.advance().value;
+      const nameTok = this.advance();
+      const id = nameTok.value;
       const args: Term[] = [];
 
       if (this.match(TokenKind.LPAREN)) {
         this.advance();
         if (!this.match(TokenKind.RPAREN)) {
           args.push(this.parseTerm());
-
           while (this.match(TokenKind.COMMA)) {
             this.advance();
             args.push(this.parseTerm());
           }
         }
-
         this.expect(TokenKind.RPAREN);
+        const rel =
+          this.expectBinding(id, SymbolKind.Rel) ??
+          add(this.st, SymbolKind.Rel, Symbol(id), args.length);
+        this.bindings.set(id, rel);
+        return { kind: NodeKind.Atom, idx: rel.idx, args };
       }
 
-      const rel = this.expectBinding(name, SymbolKind.Rel) ?? add(
-        this.st,
-        SymbolKind.Rel,
-        Symbol(name),
-        args.length,
-      );
-
-      this.bindings.set(name, rel);
-      return { kind: NodeKind.Atom, idx: rel.idx, args };
+      const rel =
+        this.expectBinding(id, SymbolKind.Rel) ??
+        add(this.st, SymbolKind.Rel, Symbol(id), 0);
+      this.bindings.set(id, rel);
+      return { kind: NodeKind.Atom, idx: rel.idx, args: [] };
     }
-    
-    throw new Error(`Expected atom or '(' at position ${this.peek().pos}`);
+    throw new Error(`Expected atom at ${this.peek().pos}`);
   }
-  
-  private parseParenthesized(): Formula {
+
+  private parseParenthesised(): Formula {
     this.expect(TokenKind.LPAREN);
-    const formula = this.parseImplication();
+    const f = this.parseImplication();
     this.expect(TokenKind.RPAREN);
-    return formula;
+    return f;
   }
-  
-  private parseTerm(): Term {
-    if (this.match(TokenKind.IDENTIFIER)) {
-      const name = this.advance().value;
-      
-      if (this.match(TokenKind.LPAREN)) {
-        this.advance();
-        const args: Term[] = [];
-        
-        if (!this.match(TokenKind.RPAREN)) {
-          args.push(this.parseTerm());
-          
-          while (this.match(TokenKind.COMMA)) {
-            this.advance();
-            args.push(this.parseTerm());
-          }
-        }
-        
-        this.expect(TokenKind.RPAREN);
 
-        const func = this.expectBinding(name, SymbolKind.Fun) ?? add(
-          this.st,
-          SymbolKind.Fun,
-          Symbol(name),
-          args.length,
-        );
-        
-        this.bindings.set(name, func);
-        return { kind: NodeKind.FunApp, idx: func.idx, args };
-      } else {
-        const entry = this.expectBinding(name, SymbolKind.Var, SymbolKind.Const);
-        if (entry?.kind == SymbolKind.Var) {
-          return { kind: NodeKind.Var, idx: entry.idx };
-        } else if (entry?.kind == SymbolKind.Const) {
-          return { kind: NodeKind.Const, idx: entry.idx };
-        } else {
-          // TODO: allow for unbound variables as well
-          const c = add(this.st, SymbolKind.Const, Symbol(name));
-          this.bindings.set(name, c);
-          return { kind: NodeKind.Const, idx: c.idx };
+  private parseTerm(): Term {
+    if (!this.match(TokenKind.IDENTIFIER))
+      throw new Error(`Expected term at ${this.peek().pos}`);
+    const id = this.advance().value;
+
+    if (this.match(TokenKind.LPAREN)) {
+      this.advance();
+      const args: Term[] = [];
+      if (!this.match(TokenKind.RPAREN)) {
+        args.push(this.parseTerm());
+        while (this.match(TokenKind.COMMA)) {
+          this.advance();
+          args.push(this.parseTerm());
         }
       }
+      this.expect(TokenKind.RPAREN);
+      const func =
+        this.expectBinding(id, SymbolKind.Fun) ??
+        add(this.st, SymbolKind.Fun, Symbol(id), args.length);
+      this.bindings.set(id, func);
+      return { kind: NodeKind.FunApp, idx: func.idx, args };
     }
-    
-    throw new Error(`Expected term at position ${this.peek().pos}`);
+
+    // standalone identifier → variable *or* constant depending on syntax
+    const bound = this.expectBinding(id, SymbolKind.Var, SymbolKind.Const);
+    if (bound) {
+      return bound.kind === SymbolKind.Var
+        ? { kind: NodeKind.Var, idx: bound.idx }
+        : { kind: NodeKind.Const, idx: bound.idx };
+    }
+
+    if (looksLikeVariable(id)) {
+      const v = add(this.st, SymbolKind.Var, Symbol(id));
+      this.bindings.set(id, v);
+      return { kind: NodeKind.Var, idx: v.idx };
+    }
+
+    const c = add(this.st, SymbolKind.Const, Symbol(id));
+    this.bindings.set(id, c);
+    return { kind: NodeKind.Const, idx: c.idx };
   }
 }
 
 /**
- * Parse a formula string into a Formula AST
+ * Parses a formula into the given symbol table.
  */
 export function parseFormula(input: string, st: SymbolTable): Formula {
-  const lexer = new Lexer(input);
-  const parser = new Parser(lexer, st);
-  return parser.parseFormula();
+  return new Parser(new Lexer(input), st).parseFormula();
 }
 
 /**
- * Operator precedence for rendering (higher number = tighter binding)
+ * Precedence map for *rendering* (used to decide when brackets are needed).
+ * It must mirror the parsing precedence defined above.
  */
-const PRECEDENCE = {
+const PREC = {
   [NodeKind.Implies]: 1,
-  [NodeKind.Or]: 2,
-  [NodeKind.And]: 3,
+  [NodeKind.And]: 2,
+  [NodeKind.Or]: 3,
   [NodeKind.Not]: 4,
 } as const;
 
-/**
- * Check if we need brackets around a subformula when rendering
- */
-function needsBrackets(child: Formula, parent: Formula): boolean {
-  const childPrec = PRECEDENCE[child.kind as keyof typeof PRECEDENCE];
-  const parentPrec = PRECEDENCE[parent.kind as keyof typeof PRECEDENCE];
-  
-  if (childPrec === undefined || parentPrec === undefined) {
-    return false; // Quantifiers and atoms don't need precedence checking
-  }
-  
-  // Lower precedence needs brackets
-  if (childPrec < parentPrec) {
-    return true;
-  }
-  
-  // Same precedence: check associativity
-  if (childPrec === parentPrec) {
-    // Right-associative operators (just implication)
-    if (parent.kind === NodeKind.Implies && child === (parent as any).left) {
+function needsParens(child: Formula, parent: Formula): boolean {
+  const cp = PREC[child.kind as keyof typeof PREC];
+  const pp = PREC[parent.kind as keyof typeof PREC];
+  if (cp === undefined || pp === undefined) return false;
+  if (cp < pp) return true; // lower precedence needs parentheses
+  if (cp === pp) {
+    // Implication is right‑associative – need parens around *left* child
+    if (parent.kind === NodeKind.Implies && (parent as any).left === child)
       return true;
-    }
-    // Left-associative operators need brackets on right
-    if ((parent.kind === NodeKind.And || parent.kind === NodeKind.Or) && 
-        child === (parent as any).right && child.kind === parent.kind) {
-      return false; // Same operator, left-associative, no brackets needed
-    }
+    // AND / OR are left‑associative – need parens around *right* child when same kind
+    if (
+      (parent.kind === NodeKind.And || parent.kind === NodeKind.Or) &&
+      (parent as any).right === child &&
+      child.kind === parent.kind
+    )
+      return true;
   }
-  
   return false;
 }
 
-/**
- * Render a term to string
- */
-function renderTerm(term: Term, st: SymbolTable): string {
-  switch (term.kind) {
+function renderTerm(t: Term, st: SymbolTable): string {
+  switch (t.kind) {
     case NodeKind.Var:
-      const varEntry = resolve(SymbolKind.Var, term.idx, st);
-      return varEntry.symbol.description ?? `var_${term.idx}`;
+      return (
+        resolve(SymbolKind.Var, t.idx, st).symbol.description ?? `v${t.idx}`
+      );
     case NodeKind.Const:
-      const constEntry = resolve(SymbolKind.Const, term.idx, st);
-      return constEntry.symbol.description ?? `const_${term.idx}`;
-    case NodeKind.FunApp:
-      const funEntry = resolve(SymbolKind.Fun, term.idx, st);
-      const funName = funEntry.symbol.description ?? `f_${term.idx}`;
-      if (term.args.length === 0) {
-        return funName;
-      }
-      const funArgs = term.args.map(arg => renderTerm(arg, st)).join(', ');
-      return `${funName}(${funArgs})`;
-    default:
-      const _exhaustive: never = term;
-      throw new Error(`Unknown term kind: ${_exhaustive}`);
+      return (
+        resolve(SymbolKind.Const, t.idx, st).symbol.description ?? `c${t.idx}`
+      );
+    case NodeKind.FunApp: {
+      const fn =
+        resolve(SymbolKind.Fun, t.idx, st).symbol.description ?? `f${t.idx}`;
+      return t.args.length
+        ? `${fn}(${t.args.map((a) => renderTerm(a, st)).join(', ')})`
+        : fn;
+    }
   }
 }
 
-/**
- * Render a formula to string with minimal brackets
- */
-export function renderFormula(formula: Formula, st: SymbolTable): string {
-  function render(f: Formula, parent?: Formula): string {
-    const needsParens = parent && needsBrackets(f, parent);
-    
-    let result: string;
-    
-    switch (f.kind) {
-      case NodeKind.Atom:
-        const relEntry = resolve(SymbolKind.Rel, f.idx, st);
-        const relName = relEntry.symbol.description ?? `R_${f.idx}`;
-        if (f.args.length === 0) {
-          result = relName;
-        } else {
-          const args = f.args.map(arg => renderTerm(arg, st)).join(', ');
-          result = `${relName}(${args})`;
-        }
+export function renderFormula(f: Formula, st: SymbolTable): string {
+  const rec = (phi: Formula, parent?: Formula): string => {
+    const paren = parent && needsParens(phi, parent);
+    let out: string;
+    switch (phi.kind) {
+      case NodeKind.Atom: {
+        const rel =
+          resolve(SymbolKind.Rel, phi.idx, st).symbol.description ??
+          `R${phi.idx}`;
+        out = phi.args.length
+          ? `${rel}(${phi.args.map((a) => renderTerm(a, st)).join(', ')})`
+          : rel;
         break;
+      }
       case NodeKind.Not:
-        result = `¬${render(f.arg, f)}`;
-        break;
-      case NodeKind.And:
-        result = `${render(f.left, f)} ∧ ${render(f.right, f)}`;
+        out = `¬${rec(phi.arg, phi)}`;
         break;
       case NodeKind.Or:
-        result = `${render(f.left, f)} ∨ ${render(f.right, f)}`;
+        out = `${rec(phi.left, phi)} ∨ ${rec(phi.right, phi)}`;
+        break;
+      case NodeKind.And:
+        out = `${rec(phi.left, phi)} ∧ ${rec(phi.right, phi)}`;
         break;
       case NodeKind.Implies:
-        result = `${render(f.left, f)} → ${render(f.right, f)}`;
+        out = `${rec(phi.left, phi)} → ${rec(phi.right, phi)}`;
         break;
-      case NodeKind.ForAll:
-        const forallVars = f.vars.map(idx => {
-          const varEntry = resolve(SymbolKind.Var, idx, st);
-          return varEntry.symbol.description ?? `var_${idx}`;
-        }).join(', ');
-        const forallBody = isAtomicFormula(f.arg) ? render(f.arg) : `(${render(f.arg)})`;
-        result = `∀${forallVars}.${forallBody}`;
+      case NodeKind.ForAll: {
+        const vars = phi.vars
+          .map(
+            (i) => resolve(SymbolKind.Var, i, st).symbol.description ?? `v${i}`
+          )
+          .join(',');
+        const body =
+          phi.arg.kind === NodeKind.Atom ? rec(phi.arg) : `(${rec(phi.arg)})`;
+        out = `∀${vars}.${body}`;
         break;
-      case NodeKind.Exists:
-        const existsVars = f.vars.map(idx => {
-          const varEntry = resolve(SymbolKind.Var, idx, st);
-          return varEntry.symbol.description ?? `var_${idx}`;
-        }).join(', ');
-        const existsBody = isAtomicFormula(f.arg) ? render(f.arg) : `(${render(f.arg)})`;
-        result = `∃${existsVars}.${existsBody}`;
+      }
+      case NodeKind.Exists: {
+        const vars = phi.vars
+          .map(
+            (i) => resolve(SymbolKind.Var, i, st).symbol.description ?? `v${i}`
+          )
+          .join(',');
+        const body =
+          phi.arg.kind === NodeKind.Atom ? rec(phi.arg) : `(${rec(phi.arg)})`;
+        out = `∃${vars}.${body}`;
         break;
+      }
       default:
-        const _exhaustive: never = f;
-        throw new Error(`Unknown formula kind: ${_exhaustive}`);
+        const _exhaustive: never = phi;
+        throw new Error(`Unknown formula kind ${_exhaustive}`);
     }
-    
-    return needsParens ? `(${result})` : result;
-  }
-  
-  return render(formula);
+    return paren ? `(${out})` : out;
+  };
+  return rec(f);
 }
 
 /**
- * Check if a formula is atomic (doesn't need brackets in quantifier bodies)
+ * Return `true` if the identifier should be treated as a *variable* by
+ * syntactic convention when it is not already bound by a quantifier.
  */
-function isAtomicFormula(f: Formula): boolean {
-  return f.kind === NodeKind.Atom || 
-         (f.kind === NodeKind.Not && f.arg.kind === NodeKind.Atom);
+function looksLikeVariable(name: string): boolean {
+  return /^[uvwxyz](\d*)$/.test(name);
 }

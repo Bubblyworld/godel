@@ -36,7 +36,7 @@ FORMULA SYNTAX:
 
 function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0 || args.includes('-h') || args.includes('--help')) {
     printUsage();
     process.exit(0);
@@ -65,7 +65,7 @@ function main() {
   try {
     const st = createSymbolTable();
     const parsed = parseFormula(formula, st);
-    
+
     switch (command) {
       case 'cnf':
         console.log('Original:');
@@ -82,7 +82,10 @@ function main() {
         break;
     }
   } catch (error) {
-    console.error('Error:', error instanceof Error ? error.message : String(error));
+    console.error(
+      'Error:',
+      error instanceof Error ? error.message : String(error)
+    );
     process.exit(1);
   }
 }

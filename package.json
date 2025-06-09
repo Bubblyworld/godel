@@ -12,6 +12,9 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "mocha",
     "test:watch": "mocha --watch"
@@ -34,7 +37,10 @@
     "@typescript-eslint/parser": "^6.0.0",
     "chai": "^5.2.0",
     "eslint": "^8.0.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.4.1",
     "mocha": "^11.5.0",
+    "prettier": "^3.5.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.0"
   },
