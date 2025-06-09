@@ -215,33 +215,42 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
 /**
  * Transforms a formula so that every quantified variable is unique. This is
  * necessary before moving universal quantifiers to the outside, to prevent
- * accidental variable capture between different quantifiers.
+ * accidental variable capture between different quantifiers. By default we
+ * freshen by symbol index, but you can set `byName` to true to freshen when
+ * there's a string naming conflict as well.
  */
 let freshenCounter = 0;
-export function freshenQuantifiers(f: Formula, st: SymbolTable): Formula {
+export function freshenQuantifiers(
+  f: Formula,
+  st: SymbolTable,
+  byName: boolean = false,
+): Formula {
   const mappings: Map<number, number> = new Map();
   const transformVar = (f: Term & { kind: NodeKind.Var }) => ({
     ...f,
     idx: mappings.has(f.idx) ? mappings.get(f.idx)! : f.idx,
   });
 
-  const visited: Set<number> = new Set();
+  const visited: Set<number | string> = new Set();
   const transformQuantifier = (f: Formula & {
     kind: NodeKind.Exists | NodeKind.ForAll,
   }) => {
     const vars: number[] = [];
     const maps: [number, number][] = [];
     for (const idx of f.vars) {
-      if (visited.has(idx)) {
-        const node = resolve(SymbolKind.Var, idx, st);
+      const node = resolve(SymbolKind.Var, idx, st);
+      const key = byName ? node.symbol.description! : node.idx;
+
+      if (visited.has(key)) {
         const sym = Symbol(`${node.symbol.description}${freshenCounter++}`);
         const ent = add(st, SymbolKind.Var, sym);
         vars.push(ent.idx);
         maps.push([idx, ent.idx]); 
       } else {
-        visited.add(idx);
         vars.push(idx);
       }
+
+      visited.add(key);
     }
 
     for (const map of maps) mappings.set(...map);
@@ -368,11 +377,8 @@ export function toCNF(f: Formula, st: SymbolTable): Formula {
   f = transformImpliesToOr(f);
   f = pushNegationsDown(f);
   f = removeDoubleNegations(f);
-  console.debug('debug', render(f, st));
-  f = freshenQuantifiers(f, st);
-  console.debug('debug', render(f, st));
+  f = freshenQuantifiers(f, st, true);
   f = moveQuantifiersOutside(f);
-  console.debug('debug', render(f, st));
   f = skolemizeExistentials(f, st);
   f = distributeOrOverAnd(f);
   f = removeLeadingUniversals(f);

@@ -1016,6 +1016,8 @@ __metadata:
     mocha: "npm:^11.5.0"
     ts-node: "npm:^10.9.2"
     typescript: "npm:^5.0.0"
+  bin:
+    godel: dist/cli.js
   languageName: unknown
   linkType: soft
 
