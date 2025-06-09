@@ -446,6 +446,245 @@ describe('parse.ts', () => {
     });
   });
 
+  describe('Multiple Formula Parsing', () => {
+    it('should maintain constant bindings across multiple formula parses', () => {
+      const st = createSymbolTable();
+
+      // Parse first formula with constant 'a'
+      const f1 = parseFormula('P(a)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+      if (f1.kind === NodeKind.Atom) {
+        expect(f1.args[0]?.kind).to.equal(NodeKind.Const);
+      }
+
+      // Parse second formula - 'a' should still be recognized as the same constant
+      const f2 = parseFormula('Q(a)', st);
+      expect(f2.kind).to.equal(NodeKind.Atom);
+      if (f2.kind === NodeKind.Atom) {
+        expect(f2.args[0]?.kind).to.equal(NodeKind.Const);
+        // Should be the same constant index as in first formula
+        if (f1.kind === NodeKind.Atom) {
+          expect(f2.args[0]).to.deep.equal(f1.args[0]);
+        }
+      }
+    });
+
+    it('should maintain function bindings across multiple formula parses', () => {
+      const st = createSymbolTable();
+
+      // Parse first formula with function 'f'
+      const f1 = parseFormula('P(f(x))', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+
+      // Parse second formula - 'f' should still be recognized as the same function
+      const f2 = parseFormula('Q(f(y))', st);
+      expect(f2.kind).to.equal(NodeKind.Atom);
+      if (f2.kind === NodeKind.Atom && f1.kind === NodeKind.Atom) {
+        const fun1 = f1.args[0];
+        const fun2 = f2.args[0];
+        if (fun1?.kind === NodeKind.FunApp && fun2?.kind === NodeKind.FunApp) {
+          // Should be the same function index
+          expect(fun2.idx).to.equal(fun1.idx);
+        }
+      }
+    });
+
+    it('should maintain relation bindings across multiple formula parses', () => {
+      const st = createSymbolTable();
+
+      // Parse first formula with binary relation 'R'
+      const f1 = parseFormula('R(a, b)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+
+      // Parse second formula - 'R' should still be recognized as the same relation
+      const f2 = parseFormula('R(c, d)', st);
+      expect(f2.kind).to.equal(NodeKind.Atom);
+      if (f1.kind === NodeKind.Atom && f2.kind === NodeKind.Atom) {
+        // Should be the same relation index
+        expect(f2.idx).to.equal(f1.idx);
+      }
+    });
+
+    it('should handle mixed constants and variables across multiple formulas', () => {
+      const st = createSymbolTable();
+
+      // Parse formula with constants and variables
+      const f1 = parseFormula('P(a, x)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+
+      // Parse another formula - should maintain constant/variable distinctions
+      const f2 = parseFormula('Q(a, y)', st);
+      expect(f2.kind).to.equal(NodeKind.Atom);
+
+      if (f1.kind === NodeKind.Atom && f2.kind === NodeKind.Atom) {
+        // 'a' should be the same constant in both
+        expect(f2.args[0]).to.deep.equal(f1.args[0]);
+        expect(f1.args[0]?.kind).to.equal(NodeKind.Const);
+        expect(f2.args[0]?.kind).to.equal(NodeKind.Const);
+
+        // 'x' and 'y' should be different variables
+        expect(f1.args[1]?.kind).to.equal(NodeKind.Var);
+        expect(f2.args[1]?.kind).to.equal(NodeKind.Var);
+        expect(f2.args[1]).to.not.deep.equal(f1.args[1]);
+      }
+    });
+  });
+
+  describe('Quantifier Variable Binding Edge Cases', () => {
+    it('should not clear constant bindings when quantifier uses same name', () => {
+      const st = createSymbolTable();
+
+      // First, establish 'a' as a constant
+      const f1 = parseFormula('P(a)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+      if (f1.kind === NodeKind.Atom) {
+        expect(f1.args[0]?.kind).to.equal(NodeKind.Const);
+      }
+
+      // Parse a formula with quantifier that binds a variable named 'a'
+      const f2 = parseFormula('forall a.Q(a)', st);
+      expect(f2.kind).to.equal(NodeKind.ForAll);
+      if (f2.kind === NodeKind.ForAll) {
+        expect(f2.arg.kind).to.equal(NodeKind.Atom);
+        if (f2.arg.kind === NodeKind.Atom) {
+          // Inside the quantifier, 'a' should be a variable
+          expect(f2.arg.args[0]?.kind).to.equal(NodeKind.Var);
+        }
+      }
+
+      // After parsing the quantified formula, 'a' should still be recognized as a constant
+      const f3 = parseFormula('R(a)', st);
+      expect(f3.kind).to.equal(NodeKind.Atom);
+      if (f3.kind === NodeKind.Atom && f1.kind === NodeKind.Atom) {
+        // Should be the same constant as in the first formula
+        expect(f3.args[0]).to.deep.equal(f1.args[0]);
+        expect(f3.args[0]?.kind).to.equal(NodeKind.Const);
+      }
+    });
+
+    it('should handle nested quantifiers with name conflicts', () => {
+      const st = createSymbolTable();
+
+      // Establish 'x' as a variable (since 'x' looks like a variable)
+      const f1 = parseFormula('P(x)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+      if (f1.kind === NodeKind.Atom) {
+        expect(f1.args[0]?.kind).to.equal(NodeKind.Var);
+      }
+
+      // Parse nested quantifiers both using 'x'
+      const f2 = parseFormula('forall x.exists x.Q(x)', st);
+      expect(f2.kind).to.equal(NodeKind.ForAll);
+      if (f2.kind === NodeKind.ForAll) {
+        expect(f2.arg.kind).to.equal(NodeKind.Exists);
+        if (f2.arg.kind === NodeKind.Exists) {
+          expect(f2.arg.arg.kind).to.equal(NodeKind.Atom);
+        }
+      }
+
+      // After parsing, 'x' should still be the original variable
+      const f3 = parseFormula('R(x)', st);
+      expect(f3.kind).to.equal(NodeKind.Atom);
+      if (f3.kind === NodeKind.Atom && f1.kind === NodeKind.Atom) {
+        expect(f3.args[0]).to.deep.equal(f1.args[0]);
+        expect(f3.args[0]?.kind).to.equal(NodeKind.Var);
+      }
+    });
+
+    it('should handle nested quantifiers with constant name conflicts', () => {
+      const st = createSymbolTable();
+
+      // Establish 'a' as a constant (since 'a' does not look like a variable)
+      const f1 = parseFormula('P(a)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+      if (f1.kind === NodeKind.Atom) {
+        expect(f1.args[0]?.kind).to.equal(NodeKind.Const);
+      }
+
+      // Parse nested quantifiers both using 'a'
+      const f2 = parseFormula('forall a.exists a.Q(a)', st);
+      expect(f2.kind).to.equal(NodeKind.ForAll);
+      if (f2.kind === NodeKind.ForAll) {
+        expect(f2.arg.kind).to.equal(NodeKind.Exists);
+        if (f2.arg.kind === NodeKind.Exists) {
+          expect(f2.arg.arg.kind).to.equal(NodeKind.Atom);
+        }
+      }
+
+      // After parsing, 'a' should still be the original constant
+      const f3 = parseFormula('R(a)', st);
+      expect(f3.kind).to.equal(NodeKind.Atom);
+      if (f3.kind === NodeKind.Atom && f1.kind === NodeKind.Atom) {
+        expect(f3.args[0]).to.deep.equal(f1.args[0]);
+        expect(f3.args[0]?.kind).to.equal(NodeKind.Const);
+      }
+    });
+
+    it('should handle multiple variables with same names as existing symbols', () => {
+      const st = createSymbolTable();
+
+      // Establish multiple constants
+      const f1 = parseFormula('P(a, b, c)', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+
+      // Parse quantified formula using all the same names
+      const f2 = parseFormula('forall a,b,c.Q(a,b,c)', st);
+      expect(f2.kind).to.equal(NodeKind.ForAll);
+      if (f2.kind === NodeKind.ForAll) {
+        expect(f2.vars.length).to.equal(3);
+        expect(f2.arg.kind).to.equal(NodeKind.Atom);
+        if (f2.arg.kind === NodeKind.Atom) {
+          // All should be variables inside the quantifier
+          f2.arg.args.forEach((arg) => {
+            expect(arg?.kind).to.equal(NodeKind.Var);
+          });
+        }
+      }
+
+      // After parsing, all should still be constants
+      const f3 = parseFormula('R(a, b, c)', st);
+      expect(f3.kind).to.equal(NodeKind.Atom);
+      if (f3.kind === NodeKind.Atom && f1.kind === NodeKind.Atom) {
+        // Should be the same constants as in the first formula
+        f3.args.forEach((arg, i) => {
+          expect(arg).to.deep.equal(f1.args[i]);
+          expect(arg?.kind).to.equal(NodeKind.Const);
+        });
+      }
+    });
+
+    it('should handle function name conflicts with quantified variables', () => {
+      const st = createSymbolTable();
+
+      // Establish 'f' as a function
+      const f1 = parseFormula('P(f(x))', st);
+      expect(f1.kind).to.equal(NodeKind.Atom);
+
+      // Parse quantified formula using 'f' as a variable name
+      const f2 = parseFormula('forall f.Q(f)', st);
+      expect(f2.kind).to.equal(NodeKind.ForAll);
+      if (f2.kind === NodeKind.ForAll) {
+        expect(f2.arg.kind).to.equal(NodeKind.Atom);
+        if (f2.arg.kind === NodeKind.Atom) {
+          // Inside quantifier, 'f' should be a variable
+          expect(f2.arg.args[0]?.kind).to.equal(NodeKind.Var);
+        }
+      }
+
+      // After parsing, 'f' should still work as a function
+      const f3 = parseFormula('R(f(y))', st);
+      expect(f3.kind).to.equal(NodeKind.Atom);
+      if (f3.kind === NodeKind.Atom && f1.kind === NodeKind.Atom) {
+        const fun1 = f1.args[0];
+        const fun3 = f3.args[0];
+        if (fun1?.kind === NodeKind.FunApp && fun3?.kind === NodeKind.FunApp) {
+          // Should be the same function index
+          expect(fun3.idx).to.equal(fun1.idx);
+        }
+      }
+    });
+  });
+
   describe('Integration with AST', () => {
     it('should produce equivalent results to manual AST construction', () => {
       const st = createSymbolTable();

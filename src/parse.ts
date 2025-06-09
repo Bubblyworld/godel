@@ -161,10 +161,29 @@ export class Parser {
       this.tokens.push(t);
     } while (t.kind !== TokenKind.EOF);
 
-    // existing bindings for constant/function/relation symbols
+    // existing bindings for all symbol types
+    // Priority order: constants > functions > relations > variables
+    // This ensures that if there are name conflicts, more "stable" symbols take precedence
     for (const c of st.consts) this.bindings.set(c.symbol.description!, c);
-    for (const f of st.funs) this.bindings.set(f.symbol.description!, f);
-    for (const r of st.rels) this.bindings.set(r.symbol.description!, r);
+    for (const f of st.funs) {
+      const name = f.symbol.description!;
+      if (!this.bindings.has(name)) {
+        this.bindings.set(name, f);
+      }
+    }
+    for (const r of st.rels) {
+      const name = r.symbol.description!;
+      if (!this.bindings.has(name)) {
+        this.bindings.set(name, r);
+      }
+    }
+    // For variables, use the first (oldest) occurrence to maintain consistency
+    for (const v of st.vars) {
+      const name = v.symbol.description!;
+      if (!this.bindings.has(name)) {
+        this.bindings.set(name, v);
+      }
+    }
   }
 
   private peek(): Token {
@@ -256,9 +275,31 @@ export class Parser {
       const names = this.parseVariableList();
       const vars = names.map((n) => add(this.st, SymbolKind.Var, Symbol(n)));
       this.expect(TokenKind.DOT);
-      for (const v of vars) this.bindings.set(v.symbol.description!, v);
+
+      // Save original bindings before overwriting with quantified variables
+      const originalBindings = new Map<string, SymbolEntry>();
+      for (const v of vars) {
+        const name = v.symbol.description!;
+        const original = this.bindings.get(name);
+        if (original) {
+          originalBindings.set(name, original);
+        }
+        this.bindings.set(name, v);
+      }
+
       const body = this.parseQuantified();
-      for (const v of vars) this.bindings.delete(v.symbol.description!);
+
+      // Restore original bindings or delete if none existed
+      for (const v of vars) {
+        const name = v.symbol.description!;
+        const original = originalBindings.get(name);
+        if (original) {
+          this.bindings.set(name, original);
+        } else {
+          this.bindings.delete(name);
+        }
+      }
+
       const idxs = vars.map((v) => v.idx);
       return token.kind === TokenKind.FORALL
         ? { kind: NodeKind.ForAll, vars: idxs, arg: body }
