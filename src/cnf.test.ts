@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { construct, createSymbolTable, NodeKind, render } from './ast';
+import { construct, createSymbolTable, NodeKind } from './ast';
 import {
   transformImpliesToOr,
   pushNegationsDown,
@@ -1718,8 +1718,7 @@ describe('cnf.ts', () => {
       });
 
       const g = toCNF(f, st);
-      console.log(render(f, st));
-      console.log(render(g, st));
+
       // After transformation: no implications, no existentials, in CNF
       expect(g.kind).to.not.equal(NodeKind.Implies);
       expect(g.kind).to.not.equal(NodeKind.Exists);

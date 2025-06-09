@@ -1,17 +1,16 @@
 import { expect } from 'chai';
 import {
-  NodeKind,
-  SymbolKind,
-  type Term,
-  type Formula,
-  resolve,
-  render,
-  UnresolvedSymbolError,
-  InvalidSymbolArityError,
-  createSymbolTable,
   add,
   construct,
+  createSymbolTable,
+  type Formula,
+  NodeKind,
+  resolve,
+  SymbolKind,
+  type Term,
+  UnresolvedSymbolError,
 } from './ast';
+import { renderFormula } from './parse';
 
 const st = createSymbolTable();
 const xSym = add(st, SymbolKind.Var, Symbol('x'));
@@ -22,20 +21,6 @@ const fSym = add(st, SymbolKind.Fun, Symbol('f'), 2);
 const gSym = add(st, SymbolKind.Fun, Symbol('g'), 1);
 const RSym = add(st, SymbolKind.Rel, Symbol('R'), 2);
 const SSym = add(st, SymbolKind.Rel, Symbol('S'), 1);
-
-const v = (i: number): Term => ({ kind: NodeKind.Var, idx: i });
-const c = (i: number): Term => ({ kind: NodeKind.Const, idx: i });
-const f = (i: number, ...args: Term[]): Term => ({
-  kind: NodeKind.FunApp,
-  idx: i,
-  args,
-});
-
-const atom = (i: number, ...args: Term[]): Formula => ({
-  kind: NodeKind.Atom,
-  idx: i,
-  args,
-});
 
 describe('ast.ts', () => {
   describe('Symbol table caching', () => {
@@ -138,43 +123,6 @@ describe('ast.ts', () => {
     });
   });
 
-  describe('render()', () => {
-    // ∀x. ( R(x, f(x, g(c))) → ∃y. S(g(y)) )
-    const termFxgC = f(0, v(0), f(1, c(0)));
-    const phiLeft = atom(0, v(0), termFxgC);
-    const phiRight = {
-      kind: NodeKind.Exists,
-      vars: [1],
-      arg: atom(1, f(1, v(1))),
-    } as Formula;
-
-    const full: Formula = {
-      kind: NodeKind.ForAll,
-      vars: [0],
-      arg: {
-        kind: NodeKind.Implies,
-        left: phiLeft,
-        right: phiRight,
-      },
-    };
-
-    it('pretty-prints with the expected Unicode symbols', () => {
-      const expected = '(∀x.(R(x, f(x, g(c)))→(∃y.S(g(y)))))';
-
-      expect(render(full, st)).to.equal(expected);
-    });
-
-    it('throws InvalidSymbolArityError on arity mismatch (function)', () => {
-      const bad: Term = { kind: NodeKind.FunApp, idx: 0, args: [] }; // f with 0 args
-      expect(() => render(bad, st)).to.throw(InvalidSymbolArityError);
-    });
-
-    it('throws InvalidSymbolArityError on arity mismatch (relation)', () => {
-      const bad: Formula = { kind: NodeKind.Atom, idx: 1, args: [] }; // S with 0 args
-      expect(() => render(bad, st)).to.throw(InvalidSymbolArityError);
-    });
-  });
-
   describe('construct()', () => {
     it('creates variables and constants ergonomically', () => {
       const formula = construct(st, ({ var: v, const: c }) => {
@@ -246,6 +194,7 @@ describe('ast.ts', () => {
 
     it('creates the same complex formula as in render test', () => {
       // Build: ∀x. ( R(x, f(x, g(c))) → ∃y. S(g(y)) )
+      //     =  ∀x.(R(x, f(x, g(c))) → ∃y.S(g(y)))
       const formula = construct(
         st,
         ({ var: v, const: c, func: f, atom: a, forall, exists, implies }) => {
@@ -267,8 +216,8 @@ describe('ast.ts', () => {
         }
       );
 
-      expect(render(formula, st)).to.equal(
-        '(∀x.(R(x, f(x, g(c)))→(∃y.S(g(y)))))'
+      expect(renderFormula(formula, st)).to.equal(
+        '∀x.(R(x, f(x, g(c))) → ∃y.S(g(y)))'
       );
     });
 

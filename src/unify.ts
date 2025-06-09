@@ -7,8 +7,6 @@ import {
   Term,
   transform,
   TransformFns,
-  visit,
-  VisitFns,
 } from './ast';
 import { renderFormula, renderTerm } from './parse';
 

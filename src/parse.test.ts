@@ -1,7 +1,6 @@
 import { expect } from 'chai';
-import { parseFormula, renderFormula, Lexer, TokenKind } from './parse';
-import { createSymbolTable, NodeKind, construct, render } from './ast';
-import { toCNF } from './cnf';
+import { construct, createSymbolTable, NodeKind } from './ast';
+import { Lexer, parseFormula, renderFormula, TokenKind } from './parse';
 
 describe('parse.ts', () => {
   describe('Lexer', () => {

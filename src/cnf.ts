@@ -2,14 +2,12 @@ import {
   add,
   Formula,
   NodeKind,
-  render,
   resolve,
   SymbolKind,
   SymbolTable,
   Term,
   transform,
   TransformFns,
-  visit,
 } from './ast';
 
 /**

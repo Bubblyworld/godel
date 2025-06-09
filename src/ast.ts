@@ -37,53 +37,6 @@ export type Formula =
   | { kind: NodeKind.Exists; vars: number[]; arg: Formula };
 
 /**
- * Callbacks for `visit`.
- */
-export type VisitFns<T> = {
-  Var: (f: Term & { kind: NodeKind.Var }) => T;
-  Const: (f: Term & { kind: NodeKind.Const }) => T;
-  FunApp: (f: Term & { kind: NodeKind.FunApp }) => T;
-  Atom: (f: Formula & { kind: NodeKind.Atom }) => T;
-  Not: (f: Formula & { kind: NodeKind.Not }) => T;
-  And: (f: Formula & { kind: NodeKind.And }) => T;
-  Or: (f: Formula & { kind: NodeKind.Or }) => T;
-  Implies: (f: Formula & { kind: NodeKind.Implies }) => T;
-  ForAll: (f: Formula & { kind: NodeKind.ForAll }) => T;
-  Exists: (f: Formula & { kind: NodeKind.Exists }) => T;
-};
-
-/**
- * Helper for traversing formulas.
- */
-export function visit<T>(f: Formula | Term, cbs: VisitFns<T>): T {
-  switch (f.kind) {
-    case NodeKind.Var:
-      return cbs.Var(f);
-    case NodeKind.Const:
-      return cbs.Const(f);
-    case NodeKind.FunApp:
-      return cbs.FunApp(f);
-    case NodeKind.Atom:
-      return cbs.Atom(f);
-    case NodeKind.Not:
-      return cbs.Not(f);
-    case NodeKind.And:
-      return cbs.And(f);
-    case NodeKind.Or:
-      return cbs.Or(f);
-    case NodeKind.Implies:
-      return cbs.Implies(f);
-    case NodeKind.ForAll:
-      return cbs.ForAll(f);
-    case NodeKind.Exists:
-      return cbs.Exists(f);
-    default:
-      const _exhaustive: never = f;
-      throw new Error(_exhaustive);
-  }
-}
-
-/**
  * Callbacks for `transform`.
  */
 export type TransformFns = {
@@ -354,58 +307,6 @@ export function resolve(
 }
 
 /**
- * Helper for rendering a formula or term against a symbol table:
- */
-export function render(f: Formula | Term, st: SymbolTable): string {
-  const _render = (f: Formula | Term): string =>
-    visit(f, {
-      Var: (f) => resolve(SymbolKind.Var, f.idx, st).symbol.description ?? '',
-      Const: (f) =>
-        resolve(SymbolKind.Const, f.idx, st).symbol.description ?? '',
-      FunApp: (f) => {
-        const res = resolve(SymbolKind.Fun, f.idx, st);
-        if (f.args.length !== res.arity) {
-          throw new InvalidSymbolArityError(
-            SymbolKind.Fun,
-            f.idx,
-            f.args.length,
-            st
-          );
-        }
-        const children = f.args.map(_render);
-        return `${res.symbol.description ?? ''}(${children.join(', ')})`;
-      },
-      Atom: (f) => {
-        const res = resolve(SymbolKind.Rel, f.idx, st);
-        if (f.args.length !== res.arity) {
-          throw new InvalidSymbolArityError(
-            SymbolKind.Rel,
-            f.idx,
-            f.args.length,
-            st
-          );
-        }
-        const children = f.args.map(_render);
-        return `${res.symbol.description ?? ''}(${children.join(', ')})`;
-      },
-      Not: (f) => `¬${_render(f.arg)}`,
-      And: (f) => `(${_render(f.left)}∧${_render(f.right)})`,
-      Or: (f) => `(${_render(f.left)}∨${_render(f.right)})`,
-      Implies: (f) => `(${_render(f.left)}→${_render(f.right)})`,
-      ForAll: (f) => {
-        const vars = f.vars.map((idx) => _render({ kind: NodeKind.Var, idx }));
-        return `(∀${vars.join(',')}.${_render(f.arg)})`;
-      },
-      Exists: (f) => {
-        const vars = f.vars.map((idx) => _render({ kind: NodeKind.Var, idx }));
-        return `(∃${vars.join(',')}.${_render(f.arg)})`;
-      },
-    });
-
-  return _render(f);
-}
-
-/**
  * Creates an empty symbol table with initialized caching maps.
  */
 export function createSymbolTable(): SymbolTable {
@@ -579,57 +480,60 @@ export function construct<T>(st: SymbolTable, nc: NodeConstructor<T>): T {
 export function getFreeVars(f: Term | Formula): number[] {
   const vars: number[] = [];
   const isBoundVar: Set<number> = new Set();
-  const visitVar = (f: Term & { kind: NodeKind.Var }) => {
-    if (!isBoundVar.has(f.idx)) {
-      vars.push(f.idx);
-    }
-  };
-  const visitQuantifier = (
-    f: Formula & {
-      kind: NodeKind.Exists | NodeKind.ForAll;
-    }
-  ) => {
-    const bound: number[] = [];
-    for (const idx of f.vars) {
-      // edge-case where variable reused
-      if (!isBoundVar.has(idx)) {
-        bound.push(idx);
-        isBoundVar.add(idx);
+
+  const visitNode = (f: Term | Formula): void => {
+    switch (f.kind) {
+      case NodeKind.Var:
+        if (!isBoundVar.has(f.idx)) {
+          vars.push(f.idx);
+        }
+        break;
+      case NodeKind.Const:
+        break;
+      case NodeKind.FunApp:
+        f.args.forEach(visitNode);
+        break;
+      case NodeKind.Atom:
+        f.args.forEach(visitNode);
+        break;
+      case NodeKind.Not:
+        visitNode(f.arg);
+        break;
+      case NodeKind.And:
+        visitNode(f.left);
+        visitNode(f.right);
+        break;
+      case NodeKind.Or:
+        visitNode(f.left);
+        visitNode(f.right);
+        break;
+      case NodeKind.Implies:
+        visitNode(f.left);
+        visitNode(f.right);
+        break;
+      case NodeKind.ForAll:
+      case NodeKind.Exists: {
+        const bound: number[] = [];
+        for (const idx of f.vars) {
+          // edge-case where variable reused
+          if (!isBoundVar.has(idx)) {
+            bound.push(idx);
+            isBoundVar.add(idx);
+          }
+        }
+
+        visitNode(f.arg);
+        for (const idx of bound) isBoundVar.delete(idx);
+        break;
+      }
+      default: {
+        const _exhaustive: never = f;
+        throw new Error(_exhaustive);
       }
     }
-
-    visit(f.arg, cbs);
-    for (const idx of bound) isBoundVar.delete(idx);
-  };
-  const cbs: VisitFns<void> = {
-    Const: (_f) => {},
-    FunApp: (f) => {
-      f.args.map((t) => visit(t, cbs));
-    },
-    Atom: (f) => {
-      f.args.map((t) => visit(t, cbs));
-    },
-    Not: (f) => {
-      visit(f.arg, cbs);
-    },
-    And: (f) => {
-      visit(f.left, cbs);
-      visit(f.right, cbs);
-    },
-    Or: (f) => {
-      visit(f.left, cbs);
-      visit(f.right, cbs);
-    },
-    Implies: (f) => {
-      visit(f.left, cbs);
-      visit(f.right, cbs);
-    },
-    Var: visitVar,
-    ForAll: visitQuantifier,
-    Exists: visitQuantifier,
   };
 
-  visit(f, cbs);
+  visitNode(f);
   return vars;
 }
 
