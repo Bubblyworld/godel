@@ -1,4 +1,4 @@
-import { add, Formula, NodeKind, resolve, SymbolKind, SymbolTable, Term, transform, TransformFns, visit } from "./ast";
+import { add, Formula, NodeKind, render, resolve, SymbolKind, SymbolTable, Term, transform, TransformFns, visit } from "./ast";
 
 /**
  * Converts all instances of A→B to ¬A∨B.
@@ -368,8 +368,11 @@ export function toCNF(f: Formula, st: SymbolTable): Formula {
   f = transformImpliesToOr(f);
   f = pushNegationsDown(f);
   f = removeDoubleNegations(f);
+  console.debug('debug', render(f, st));
   f = freshenQuantifiers(f, st);
+  console.debug('debug', render(f, st));
   f = moveQuantifiersOutside(f);
+  console.debug('debug', render(f, st));
   f = skolemizeExistentials(f, st);
   f = distributeOrOverAnd(f);
   f = removeLeadingUniversals(f);
