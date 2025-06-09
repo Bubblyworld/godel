@@ -1,14 +1,14 @@
+import { assert } from 'console';
 import {
+    Atom,
   equal,
   Formula,
   getFreeVars,
   NodeKind,
-  SymbolTable,
   Term,
   transform,
   TransformFns,
 } from './ast';
-import { renderFormula, renderTerm } from './parse';
 
 /**
  * Represents a mapping from free variables to terms.
@@ -173,4 +173,19 @@ export function unify(terms: [Term, Term][]): Substitution | undefined {
   }
 
   return substitution;
+}
+
+/**
+ * Friendly wrapper around `unify` for Atoms.
+ */
+export function unifyAtoms(a: Atom, b: Atom): Substitution | undefined {
+  if (a.idx != b.idx) return undefined;
+  assert(a.args.length == b.args.length, "args should be same length")
+
+  const pairs: [Term, Term][] = [];
+  for (let i = 0; i < a.args.length; i++) {
+    pairs.push([a.args[i], b.args[i]]);
+  }
+
+  return unify(pairs);
 }

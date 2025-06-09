@@ -14,42 +14,62 @@ export const enum NodeKind {
   Exists, // existential quantification of a formula
 }
 
+/** Variable term with symbol table index. */
+export type Var = { kind: NodeKind.Var; idx: number };
+
+/** Constant term with symbol table index. */
+export type Const = { kind: NodeKind.Const; idx: number };
+
+/** Function application with symbol table index and argument terms. */
+export type FunApp = { kind: NodeKind.FunApp; idx: number; args: Term[] };
+
+/** Atomic formula with relation symbol index and argument terms. */
+export type Atom = { kind: NodeKind.Atom; idx: number; args: Term[] };
+
+/** Negation of a formula. */
+export type Not = { kind: NodeKind.Not; arg: Formula };
+
+/** Conjunction of two formulas. */
+export type And = { kind: NodeKind.And; left: Formula; right: Formula };
+
+/** Disjunction of two formulas. */
+export type Or = { kind: NodeKind.Or; left: Formula; right: Formula };
+
+/** Implication between two formulas. */
+export type Implies = { kind: NodeKind.Implies; left: Formula; right: Formula };
+
+/** Universal quantification over variables. */
+export type ForAll = { kind: NodeKind.ForAll; vars: number[]; arg: Formula };
+
+/** Existential quantification over variables. */
+export type Exists = { kind: NodeKind.Exists; vars: number[]; arg: Formula };
+
 /**
  * Represents a first-order term, which is either a variable, constant or an
  * application of an n-ary function to n subterms.
  */
-export type Term =
-  | { kind: NodeKind.Var; idx: number }
-  | { kind: NodeKind.Const; idx: number }
-  | { kind: NodeKind.FunApp; idx: number; args: Term[] };
+export type Term = Var | Const | FunApp;
 
 /**
  * Represents a first-order formula, which is either an application of an n-ary
  * relation to n subterms, or a logical combination of formulas.
  */
-export type Formula =
-  | { kind: NodeKind.Atom; idx: number; args: Term[] }
-  | { kind: NodeKind.Not; arg: Formula }
-  | { kind: NodeKind.And; left: Formula; right: Formula }
-  | { kind: NodeKind.Or; left: Formula; right: Formula }
-  | { kind: NodeKind.Implies; left: Formula; right: Formula }
-  | { kind: NodeKind.ForAll; vars: number[]; arg: Formula }
-  | { kind: NodeKind.Exists; vars: number[]; arg: Formula };
+export type Formula = Atom | Not | And | Or | Implies | ForAll | Exists;
 
 /**
  * Callbacks for `transform`.
  */
 export type TransformFns = {
-  Var?: (f: Term & { kind: NodeKind.Var }) => Term;
-  Const?: (f: Term & { kind: NodeKind.Const }) => Term;
-  FunApp?: (f: Term & { kind: NodeKind.FunApp }) => Term;
-  Atom?: (f: Formula & { kind: NodeKind.Atom }) => Formula;
-  Not?: (f: Formula & { kind: NodeKind.Not }) => Formula;
-  And?: (f: Formula & { kind: NodeKind.And }) => Formula;
-  Or?: (f: Formula & { kind: NodeKind.Or }) => Formula;
-  Implies?: (f: Formula & { kind: NodeKind.Implies }) => Formula;
-  ForAll?: (f: Formula & { kind: NodeKind.ForAll }) => Formula;
-  Exists?: (f: Formula & { kind: NodeKind.Exists }) => Formula;
+  Var?: (f: Var) => Term;
+  Const?: (f: Const) => Term;
+  FunApp?: (f: FunApp) => Term;
+  Atom?: (f: Atom) => Formula;
+  Not?: (f: Not) => Formula;
+  And?: (f: And) => Formula;
+  Or?: (f: Or) => Formula;
+  Implies?: (f: Implies) => Formula;
+  ForAll?: (f: ForAll) => Formula;
+  Exists?: (f: Exists) => Formula;
 };
 
 /**
@@ -142,14 +162,36 @@ export const enum SymbolKind {
   Rel, // relation symbol R
 }
 
+/** Variable symbol entry with index. */
+export type VarSymbol = { kind: SymbolKind.Var; symbol: symbol; idx: number };
+
+/** Constant symbol entry with index. */
+export type ConstSymbol = {
+  kind: SymbolKind.Const;
+  symbol: symbol;
+  idx: number;
+};
+
+/** Function symbol entry with arity and index. */
+export type FunSymbol = {
+  kind: SymbolKind.Fun;
+  symbol: symbol;
+  arity: number;
+  idx: number;
+};
+
+/** Relation symbol entry with arity and index. */
+export type RelSymbol = {
+  kind: SymbolKind.Rel;
+  symbol: symbol;
+  arity: number;
+  idx: number;
+};
+
 /**
  * Represents an entry in a symbol table.
  */
-export type SymbolEntry =
-  | { kind: SymbolKind.Var; symbol: symbol; idx: number }
-  | { kind: SymbolKind.Const; symbol: symbol; idx: number }
-  | { kind: SymbolKind.Fun; symbol: symbol; arity: number; idx: number }
-  | { kind: SymbolKind.Rel; symbol: symbol; arity: number; idx: number };
+export type SymbolEntry = VarSymbol | ConstSymbol | FunSymbol | RelSymbol;
 
 /**
  * Represents a symbol table for a first-order context, which maps variables,
@@ -157,10 +199,10 @@ export type SymbolEntry =
  * instead of strings to guarantee uniqueness and protect against name collisions.
  */
 export type SymbolTable = {
-  vars: (SymbolEntry & { kind: SymbolKind.Var })[];
-  consts: (SymbolEntry & { kind: SymbolKind.Const })[];
-  funs: (SymbolEntry & { kind: SymbolKind.Fun })[];
-  rels: (SymbolEntry & { kind: SymbolKind.Rel })[];
+  vars: VarSymbol[];
+  consts: ConstSymbol[];
+  funs: FunSymbol[];
+  rels: RelSymbol[];
   varToIdx: Map<symbol, number>;
   constToIdx: Map<symbol, number>;
   funToIdx: Map<symbol, number>;
@@ -229,22 +271,22 @@ export function resolve(
   kind: SymbolKind.Var,
   idx: number,
   st: SymbolTable
-): SymbolEntry & { kind: SymbolKind.Var };
+): VarSymbol;
 export function resolve(
   kind: SymbolKind.Const,
   idx: number,
   st: SymbolTable
-): SymbolEntry & { kind: SymbolKind.Const };
+): ConstSymbol;
 export function resolve(
   kind: SymbolKind.Fun,
   idx: number,
   st: SymbolTable
-): SymbolEntry & { kind: SymbolKind.Fun };
+): FunSymbol;
 export function resolve(
   kind: SymbolKind.Rel,
   idx: number,
   st: SymbolTable
-): SymbolEntry & { kind: SymbolKind.Rel };
+): RelSymbol;
 export function resolve(symbol: symbol, st: SymbolTable): SymbolEntry;
 export function resolve(
   kindOrSymbol: SymbolKind | symbol,
@@ -331,24 +373,24 @@ export function add(
   st: SymbolTable,
   kind: SymbolKind.Var,
   symbol: symbol
-): SymbolEntry & { kind: SymbolKind.Var };
+): VarSymbol;
 export function add(
   st: SymbolTable,
   kind: SymbolKind.Const,
   symbol: symbol
-): SymbolEntry & { kind: SymbolKind.Const };
+): ConstSymbol;
 export function add(
   st: SymbolTable,
   kind: SymbolKind.Fun,
   symbol: symbol,
   arity: number
-): SymbolEntry & { kind: SymbolKind.Fun };
+): FunSymbol;
 export function add(
   st: SymbolTable,
   kind: SymbolKind.Rel,
   symbol: symbol,
   arity: number
-): SymbolEntry & { kind: SymbolKind.Rel };
+): RelSymbol;
 export function add(
   st: SymbolTable,
   kind: SymbolKind,
@@ -414,24 +456,23 @@ export function add(
 }
 
 export type NodeConstructor<T> = (fns: {
-  var: (sym: symbol) => Term & { kind: NodeKind.Var };
-  const: (sym: symbol) => Term & { kind: NodeKind.Const };
-  func: (sym: symbol, ...args: Term[]) => Term & { kind: NodeKind.FunApp };
-  atom: (sym: symbol, ...args: Term[]) => Formula & { kind: NodeKind.Atom };
-  not: (arg: Formula) => Formula & { kind: NodeKind.Not };
-  and: (left: Formula, right: Formula) => Formula & { kind: NodeKind.And };
-  or: (left: Formula, right: Formula) => Formula & { kind: NodeKind.Or };
-  implies: (
-    left: Formula,
-    right: Formula
-  ) => Formula & { kind: NodeKind.Implies };
-  forall: (vars: symbol[], arg: Formula) => Formula & { kind: NodeKind.ForAll };
-  exists: (vars: symbol[], arg: Formula) => Formula & { kind: NodeKind.Exists };
+  var: (sym: symbol) => Var;
+  const: (sym: symbol) => Const;
+  func: (sym: symbol, ...args: Term[]) => FunApp;
+  atom: (sym: symbol, ...args: Term[]) => Atom;
+  not: (arg: Formula) => Not;
+  and: (left: Formula, right: Formula) => And;
+  or: (left: Formula, right: Formula) => Or;
+  implies: (left: Formula, right: Formula) => Implies;
+  forall: (vars: symbol[], arg: Formula) => ForAll;
+  exists: (vars: symbol[], arg: Formula) => Exists;
 }) => T;
 
 /**
  * Higher-level constructor for AST nodes that works with Symbols natively
- * and automatically handles the symbol table for you.
+ * and automatically handles the symbol table for you. Kinda deprecated now
+ * that we have a parser, but might still be useful if you want full control
+ * over how symbols are handled under the hood.
  */
 export function construct<T>(st: SymbolTable, nc: NodeConstructor<T>): T {
   return nc({
