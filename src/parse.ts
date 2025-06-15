@@ -62,7 +62,7 @@ export class Lexer {
 
   private readIdentifier(): string {
     let out = '';
-    while (this.current && /[A-Za-z0-9_]/.test(this.current)) {
+    while (this.current && /[A-Za-z0-9_\*\+\=]/.test(this.current)) {
       out += this.current;
       this.advance();
     }
@@ -128,7 +128,7 @@ export class Lexer {
       return { kind: TokenKind.IMPLIES, value: '->', pos: start };
     }
 
-    if (/[A-Za-z]/.test(this.current)) {
+    if (/[A-Za-z\+\*\=0-9]/.test(this.current)) {
       const id = this.readIdentifier();
       switch (id.toLowerCase()) {
         case 'forall':
