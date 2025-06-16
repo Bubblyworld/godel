@@ -26,12 +26,16 @@ export function peanoArithmetic(): {
   const f5 = parseFormula('forall x. (!(=(S(x), 0)))', st);
   const f6 = parseFormula('forall x, y. (=(S(x), S(y)) -> =(x, y))', st);
 
+  const e1 = parseFormula('forall x. =(x, x)', st);
+  const e2 = parseFormula('forall x, y. (=(x, y) -> =(y, x))', st);
+  const e3 = parseFormula('forall x, y, z. ((=(x, y) & =(y, z)) -> =(x, z))', st);
+
   return {
     st,
     equals,
     plus,
     times,
     zero,
-    axioms: [f1, f2, f3, f4, f5, f6],
+    axioms: [f1, f2, f3, f4, f5, f6, e1, e2, e3],
   };
 }
