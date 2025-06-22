@@ -75,7 +75,9 @@ export function apply(sub: Substitution, f: Term | Formula): Term | Formula {
  * syntactic unification). Uses Martelli and Montanari's algorithm, which is
  * exponential-time in the worst case.
  */
-export function unify(terms: [Term, Term][]): Substitution | undefined {
+export function unify(
+  terms: [Term, Term][],
+): Substitution | undefined {
   let stepped = false;
   do {
     stepped = false;

@@ -1,29 +1,25 @@
-import { Formula, NodeKind, Not, SymbolTable } from './ast';
+import { Formula, NodeKind, SymbolTable } from './ast';
 import { toCNF } from './cnf';
 import { renderFormula } from './parse';
 import {
-  cnfToClauses,
-  getResolutions,
-  applyResolution,
-  Clause,
+    applyResolution,
+    Clause,
+    cnfToClauses,
+    getResolutions,
+    Resolution,
 } from './resolution';
 
 export function proves(
   theory: Formula[],
-  formula: Formula | null | undefined,
+  formula: Formula,
   st: SymbolTable,
   iters: number = 5,
 ): boolean {
-  const formulas: Formula[] = [
-    ...theory,
-    ...(formula != null ? [{ kind: NodeKind.Not, arg: formula } as Not] : []),
-  ];
-
-  const clauses = cnfToClauses(toCNF(formulas.reduce((f, g) => ({
-    kind: NodeKind.And,
-    left: f,
-    right: g,
-  })), st));
+  const clauses = theory.flatMap(f => cnfToClauses(toCNF(f, st)));
+  clauses.push(...cnfToClauses(toCNF({
+    kind: NodeKind.Not,
+    arg: formula,
+  }, st), true));
 
   const lookup = new Set<string>();
   for (const clause of clauses) {
@@ -32,28 +28,47 @@ export function proves(
 
   for (let epoch = 0; epoch < iters; epoch++) {
     const len = clauses.length;
+    let resolutions: Resolution[] = [];
     for (let i = 0; i < len; i++) {
       for (let j = i+1; j < len; j++) {
-        const resolutions = getResolutions(clauses[i], clauses[j]);
-        for (const res of resolutions) {
-          const clause = applyResolution(res);
-          if (clause.atoms.length == 0) {
-            return true; // derived absurdity; formula has been proven
-          }
-
-          const hash = hashClause(clause);
-          if (lookup.has(hash)) {
-            continue;
-          }
-
-          clauses.push(clause);
-          lookup.add(hash);
-        }
+        resolutions.push(...getResolutions(clauses[i], clauses[j]));
       }
     }
 
-    const added = clauses.length - len;
-    console.debug(`Epoch ${epoch.toString().padStart(2, '0')}: added ${added} new clauses`);
+    // Stick to only resolving SOS clauses:
+    resolutions = resolutions.filter(res => res.left.sos || res.right.sos);
+
+    // Stick to unit resolutions if possible:
+    resolutions.sort((a, b) => {
+      const as = size(a);
+      const bs = size(b);
+      return as < bs ? -1 : as == bs ? 0 : 1;
+    });
+    if (resolutions.length > 0 && size(resolutions[0]) == 1) {
+      resolutions = resolutions.filter(res => size(res) == 1);
+    }
+
+    let added = 0;
+    let maxSize = 0;
+    for (const res of resolutions) {
+      maxSize = Math.max(maxSize, size(res));
+
+      const clause = applyResolution(res);
+      if (clause.atoms.length == 0) {
+        return true; // derived absurdity; formula has been proven
+      }
+
+      const hash = hashClause(clause);
+      if (lookup.has(hash)) {
+        continue;
+      }
+
+      added++;
+      clauses.push(clause);
+      lookup.add(hash);
+    }
+
+    console.debug(`Epoch ${epoch.toString().padStart(2, '0')}: added ${added} new clauses, max size ${maxSize}`);
     if (added == 0) {
       break; // early-out
     }
@@ -77,4 +92,8 @@ export function proves(
  */
 function hashClause(clause: Clause): string {
   return JSON.stringify(clause);
+}
+
+function size(res: Resolution): number {
+  return Math.min(res.left.atoms.length, res.right.atoms.length);
 }

@@ -1,14 +1,12 @@
 import {
-  And,
-  Atom,
-  Formula,
-  NodeKind,
-  Not,
-  Or,
-  transform,
-  TransformFns,
+    And,
+    Atom,
+    Formula,
+    NodeKind,
+    Not,
+    Or
 } from './ast';
-import { Substitution, unify, unifyAtoms, apply } from './unify';
+import { apply, Substitution, unifyAtoms } from './unify';
 
 /**
  * A clause represents a disjunction of atomic formulas or their negations.
@@ -16,12 +14,18 @@ import { Substitution, unify, unifyAtoms, apply } from './unify';
 export type Clause = {
   atoms: Atom[];
   negated: boolean[];
+
+  /**
+   * True if the clause is in the support-set, i.e. was either the original
+   * goal or some descended resolvent of it.
+   */
+  sos: boolean;
 };
 
 /**
  * Converts a formula in CNF to a set of clauses.
  */
-export function cnfToClauses(f: Formula): Clause[] {
+export function cnfToClauses(f: Formula, sos: boolean = false): Clause[] {
   const clauses: (Or | Not | Atom)[] = [];
   const check = (f: Formula) => {
     if (
@@ -69,7 +73,7 @@ export function cnfToClauses(f: Formula): Clause[] {
     if (f.kind == NodeKind.Or) split(f);
     else check(f);
 
-    return { atoms, negated };
+    return { atoms, negated, sos };
   });
 }
 
@@ -134,5 +138,9 @@ export function applyResolution(resolution: Resolution): Clause {
     }
   }
   
-  return { atoms, negated };
+  return {
+    atoms,
+    negated,
+    sos: left.sos || right.sos,
+  };
 }
