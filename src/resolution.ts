@@ -1,11 +1,4 @@
-import {
-    And,
-    Atom,
-    Formula,
-    NodeKind,
-    Not,
-    Or
-} from './ast';
+import { And, Atom, Formula, NodeKind, Not, Or } from './ast';
 import { apply, Substitution, unifyAtoms } from './unify';
 
 /**
@@ -102,11 +95,11 @@ export function getResolutions(a: Clause, b: Clause): Resolution[] {
       const sub = unifyAtoms(atomA, atomB);
       if (sub) {
         res.push({
-            left: a,
-            leftIdx: i,
-            right: b,
-            rightIdx: j,
-            sub,
+          left: a,
+          leftIdx: i,
+          right: b,
+          rightIdx: j,
+          sub,
         });
       }
     }
@@ -120,7 +113,7 @@ export function getResolutions(a: Clause, b: Clause): Resolution[] {
  */
 export function applyResolution(resolution: Resolution): Clause {
   const { left, leftIdx, right, rightIdx, sub } = resolution;
-  
+
   const atoms: Atom[] = [];
   const negated: boolean[] = [];
   for (let i = 0; i < left.atoms.length; i++) {
@@ -137,7 +130,7 @@ export function applyResolution(resolution: Resolution): Clause {
       negated.push(right.negated[i]);
     }
   }
-  
+
   return {
     atoms,
     negated,

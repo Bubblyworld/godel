@@ -1,6 +1,11 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { cnfToClauses, Clause, getResolutions, applyResolution } from './resolution';
+import {
+  cnfToClauses,
+  Clause,
+  getResolutions,
+  applyResolution,
+} from './resolution';
 import { toCNF } from './cnf';
 import {
   Formula,
@@ -107,7 +112,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(0);
       expect(resolvent.negated).to.have.length(0);
@@ -119,7 +124,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(2);
       // Should have Q(a) and R(b) after resolving P(x) with !P(a)
@@ -131,7 +136,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(2);
       // Should have Q(a) and R(z) after resolving P(x,y) with !P(a,b)
@@ -143,7 +148,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(2);
       expect(resolvent.negated).to.deep.equal([true, false]); // !Q(a) | R(b)
@@ -155,7 +160,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(2);
       // Should have Q(a) and R(y)
@@ -167,7 +172,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(2);
       // Variables should be consistently substituted
@@ -179,7 +184,7 @@ describe('resolution.ts', () => {
       const cs = cnfToClauses(f);
       const rs = getResolutions(cs[0], cs[1]);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(1);
       // Should result in Q(b)
@@ -189,13 +194,13 @@ describe('resolution.ts', () => {
       // Create two identical clauses manually for testing
       const p = parseFormula('P(x)', st);
       const notP = parseFormula('!P(a)', st);
-      
+
       const clause1 = cnfToClauses(p)[0];
       const clause2 = cnfToClauses(notP)[0];
-      
+
       const rs = getResolutions(clause1, clause2);
       expect(rs.length).to.equal(1);
-      
+
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(0); // Empty clause
     });

@@ -1,13 +1,22 @@
-import { add, ConstSymbol, createSymbolTable, Formula, FunSymbol, RelSymbol, SymbolKind, SymbolTable } from "./ast";
-import { parseFormula } from "./parse";
+import {
+  add,
+  ConstSymbol,
+  createSymbolTable,
+  Formula,
+  FunSymbol,
+  RelSymbol,
+  SymbolKind,
+  SymbolTable,
+} from './ast';
+import { parseFormula } from './parse';
 
 /**
  * Returns the axioms and symbols of Peano Arithmetic.
  * TODO: axiom schema of induction
  */
 export function peanoArithmetic(): {
-  st: SymbolTable; 
-  axioms: Formula[]; 
+  st: SymbolTable;
+  axioms: Formula[];
   zero: ConstSymbol;
   equals: RelSymbol;
   plus: FunSymbol;
@@ -28,7 +37,10 @@ export function peanoArithmetic(): {
 
   const e1 = parseFormula('forall x. =(x, x)', st);
   const e2 = parseFormula('forall x, y. (=(x, y) -> =(y, x))', st);
-  const e3 = parseFormula('forall x, y, z. ((=(x, y) & =(y, z)) -> =(x, z))', st);
+  const e3 = parseFormula(
+    'forall x, y, z. ((=(x, y) & =(y, z)) -> =(x, z))',
+    st
+  );
 
   return {
     st,
