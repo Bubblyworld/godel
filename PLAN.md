@@ -286,8 +286,8 @@ export function proves(
 ### 6. Implementation Timeline
 
 1. **Week 1**: Core data structures (ClauseSignature, SymbolMasks, IndexedClause) ✅
-2. **Week 2**: Subsumption index with fast filtering
-3. **Week 3**: Full subsumption algorithm with constraint matching
+2. **Week 2**: Subsumption index with fast filtering ✅
+3. **Week 3**: Full subsumption algorithm with constraint matching ✅
 4. **Week 4**: Passive/Active clause architecture with priority queues
 5. **Week 5**: Integration into prover and testing
 

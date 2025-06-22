@@ -1,6 +1,6 @@
 import { Clause } from './resolution';
-import { SymbolTable, NodeKind, Term, SymbolKind } from './ast';
-import { Substitution } from './unify';
+import { SymbolTable, NodeKind, Term, SymbolKind, Atom, equal } from './ast';
+import { Substitution, unifyAtoms, apply } from './unify';
 
 /**
  * 128-bit clause signature split into 4x32-bit blocks for efficient subsumption checking
@@ -412,8 +412,135 @@ export class SubsumptionIndex {
       return null;
     }
 
-    // TODO: Implement full subsumption algorithm in Week 3
-    // For now, just return null (no subsumption found)
+    // Special case: empty clause subsumes nothing except itself
+    if (a.atoms.length === 0) {
+      return b.atoms.length === 0 ? new Map() : null;
+    }
+
+    // Try to find a substitution that makes all literals in A match some literal in B
+    return this.findSubsumptionSubstitution(a, b);
+  }
+
+  /**
+   * Find a substitution that makes all literals in A match some literal in B
+   * Uses backtracking to explore all possible matchings
+   */
+  private findSubsumptionSubstitution(
+    a: IndexedClause,
+    b: IndexedClause
+  ): Substitution | null {
+    // Try to match all literals in A
+    const substitution = new Map<number, Term>();
+
+    // Recursive backtracking function
+    const matchLiterals = (aIndex: number): boolean => {
+      // Base case: all literals in A have been matched
+      if (aIndex >= a.atoms.length) {
+        return true;
+      }
+
+      const aAtom = a.atoms[aIndex];
+      const aNegated = a.negated[aIndex];
+
+      // Try to match with each literal in B (can reuse literals)
+      for (let bIndex = 0; bIndex < b.atoms.length; bIndex++) {
+        const bAtom = b.atoms[bIndex];
+        const bNegated = b.negated[bIndex];
+
+        // Must have same polarity
+        if (aNegated !== bNegated) continue;
+
+        // Try to unify the atoms
+        const unifier = unifyAtoms(aAtom, bAtom);
+        if (!unifier) continue;
+
+        // Check if this unifier is consistent with current substitution
+        const mergedSub = this.mergeSubstitutions(substitution, unifier);
+        if (!mergedSub) continue;
+
+        // Save current state
+        const oldSubstitution = new Map(substitution);
+
+        // Apply the merged substitution
+        substitution.clear();
+        for (const [k, v] of mergedSub) {
+          substitution.set(k, v);
+        }
+
+        // Try to match remaining literals
+        if (matchLiterals(aIndex + 1)) {
+          return true;
+        }
+
+        // Backtrack: restore state
+        substitution.clear();
+        for (const [k, v] of oldSubstitution) {
+          substitution.set(k, v);
+        }
+      }
+
+      // No valid matching found for this literal
+      return false;
+    };
+
+    // Start the backtracking search
+    if (matchLiterals(0)) {
+      return substitution;
+    }
+
     return null;
+  }
+
+  /**
+   * Merge two substitutions, returning null if they are inconsistent
+   */
+  private mergeSubstitutions(
+    sub1: Substitution,
+    sub2: Substitution
+  ): Substitution | null {
+    const result = new Map(sub1);
+
+    for (const [varIdx, term2] of sub2) {
+      if (result.has(varIdx)) {
+        // Variable already has a binding - check consistency
+        const term1 = result.get(varIdx)!;
+
+        // Apply current substitution to both terms
+        const applied1 = this.applySubstitution(result, term1);
+        const applied2 = this.applySubstitution(result, term2);
+
+        if (!equal(applied1, applied2)) {
+          // Inconsistent bindings
+          return null;
+        }
+      } else {
+        // Apply current substitution to the new term
+        const applied = this.applySubstitution(result, term2);
+        result.set(varIdx, applied);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Apply a substitution to a term
+   */
+  private applySubstitution(sub: Substitution, term: Term): Term {
+    if (term.kind === NodeKind.Var && sub.has(term.idx)) {
+      // Apply substitution recursively
+      return this.applySubstitution(sub, sub.get(term.idx)!);
+    }
+
+    if (term.kind === NodeKind.FunApp) {
+      // Apply to arguments
+      return {
+        ...term,
+        args: term.args.map((arg) => this.applySubstitution(sub, arg)),
+      };
+    }
+
+    // Constants remain unchanged
+    return term;
   }
 }

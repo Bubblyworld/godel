@@ -618,4 +618,440 @@ describe('subsumption', () => {
       expect(candidates1[0].id).to.equal(indexed1.id);
     });
   });
+
+  describe('subsumes (full algorithm)', () => {
+    it('should handle identical single literal clauses', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const x = Symbol('x');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Var, x);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x)
+      const clause: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      const indexed = index.insert(clause);
+
+      // A clause always subsumes itself
+      const sub = index.subsumes(indexed, indexed);
+      expect(sub).to.not.be.null;
+      expect(sub).to.deep.equal(new Map()); // Identity substitution
+    });
+
+    it('should detect subsumption with variable renaming', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, y);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x)
+      const clauseA: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // P(y)
+      const clauseB: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 1 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      const indexedA = index.insert(clauseA);
+      const indexedB = index.insert(clauseB);
+
+      // P(x) subsumes P(y) with substitution {x -> y}
+      const sub = index.subsumes(indexedA, indexedB);
+      expect(sub).to.not.be.null;
+      expect(sub!.get(0)).to.deep.equal({ kind: NodeKind.Var, idx: 1 });
+    });
+
+    it('should detect subsumption with constants', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const x = Symbol('x');
+      const c = Symbol('c');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Const, c);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x) - general
+      const general: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // P(c) - specific
+      const specific: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      const indexedGeneral = index.insert(general);
+      const indexedSpecific = index.insert(specific);
+
+      // P(x) subsumes P(c) with {x -> c}
+      const sub = index.subsumes(indexedGeneral, indexedSpecific);
+      expect(sub).to.not.be.null;
+      expect(sub!.get(0)).to.deep.equal({ kind: NodeKind.Const, idx: 0 });
+
+      // P(c) does not subsume P(x)
+      const noSub = index.subsumes(indexedSpecific, indexedGeneral);
+      expect(noSub).to.be.null;
+    });
+
+    it('should handle negation correctly', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const x = Symbol('x');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Var, x);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x)
+      const positive: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // !P(x)
+      const negative: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [true],
+        sos: false,
+      };
+
+      const indexedPos = index.insert(positive);
+      const indexedNeg = index.insert(negative);
+
+      // P(x) does not subsume !P(x)
+      expect(index.subsumes(indexedPos, indexedNeg)).to.be.null;
+      // !P(x) does not subsume P(x)
+      expect(index.subsumes(indexedNeg, indexedPos)).to.be.null;
+    });
+
+    it('should handle subsumption with multiple literals', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const Q = Symbol('Q');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Rel, Q, 1);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, y);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x) - single literal
+      const single: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // P(x) | Q(y) - two literals
+      const double: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 1,
+            args: [{ kind: NodeKind.Var, idx: 1 }],
+          },
+        ],
+        negated: [false, false],
+        sos: false,
+      };
+
+      const indexedSingle = index.insert(single);
+      const indexedDouble = index.insert(double);
+
+      // P(x) subsumes P(x) | Q(y)
+      const sub = index.subsumes(indexedSingle, indexedDouble);
+      expect(sub).to.not.be.null;
+
+      // P(x) | Q(y) does not subsume P(x)
+      const noSub = index.subsumes(indexedDouble, indexedSingle);
+      expect(noSub).to.be.null;
+    });
+
+    it('should require consistent substitutions across literals', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const a = Symbol('a');
+      const b = Symbol('b');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, y);
+      add(st, SymbolKind.Const, a);
+      add(st, SymbolKind.Const, b);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x) | P(x) - same variable in both literals
+      const consistent: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false, false],
+        sos: false,
+      };
+
+      // P(a) | P(b) - different constants
+      const specific: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 1 }],
+          },
+        ],
+        negated: [false, false],
+        sos: false,
+      };
+
+      const indexedConsistent = index.insert(consistent);
+      const indexedSpecific = index.insert(specific);
+
+      // P(x) | P(x) can subsume P(a) | P(b) because clauses can be shared
+      const noSub = index.subsumes(indexedConsistent, indexedSpecific);
+      expect(noSub).not.to.be.null;
+    });
+
+    it('should handle complex subsumption with function symbols', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const f = Symbol('f');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const c = Symbol('c');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Fun, f, 1);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, y);
+      add(st, SymbolKind.Const, c);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(f(x))
+      const general: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [
+              {
+                kind: NodeKind.FunApp,
+                idx: 0,
+                args: [{ kind: NodeKind.Var, idx: 0 }],
+              },
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // P(f(c))
+      const specific: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [
+              {
+                kind: NodeKind.FunApp,
+                idx: 0,
+                args: [{ kind: NodeKind.Const, idx: 0 }],
+              },
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      const indexedGeneral = index.insert(general);
+      const indexedSpecific = index.insert(specific);
+
+      // P(f(x)) subsumes P(f(c)) with {x -> c}
+      const sub = index.subsumes(indexedGeneral, indexedSpecific);
+      expect(sub).to.not.be.null;
+      expect(sub!.get(0)).to.deep.equal({ kind: NodeKind.Const, idx: 0 });
+    });
+
+    it('should handle subsumption with repeated variables', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const Q = Symbol('Q');
+      const x = Symbol('x');
+      const a = Symbol('a');
+      add(st, SymbolKind.Rel, P, 1);
+      add(st, SymbolKind.Rel, Q, 1);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Const, a);
+
+      const index = new SubsumptionIndex(st);
+
+      // P(x) | Q(x) - same variable in both literals
+      const general: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 1,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+        ],
+        negated: [false, false],
+        sos: false,
+      };
+
+      // P(a) | Q(a) - same constant in both
+      const specific1: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 1,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+        ],
+        negated: [false, false],
+        sos: false,
+      };
+
+      // P(a) | Q(a) | P(a) - repeated literals
+      const specific2: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 1,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+        ],
+        negated: [false, false, false],
+        sos: false,
+      };
+
+      const indexedGeneral = index.insert(general);
+      const indexedSpecific1 = index.insert(specific1);
+      const indexedSpecific2 = index.insert(specific2);
+
+      // P(x) | Q(x) subsumes P(a) | Q(a) with {x -> a}
+      const sub1 = index.subsumes(indexedGeneral, indexedSpecific1);
+      expect(sub1).to.not.be.null;
+      expect(sub1!.get(0)).to.deep.equal({ kind: NodeKind.Const, idx: 0 });
+
+      // P(x) | Q(x) also subsumes P(a) | Q(a) | P(a)
+      const sub2 = index.subsumes(indexedGeneral, indexedSpecific2);
+      expect(sub2).to.not.be.null;
+      expect(sub2!.get(0)).to.deep.equal({ kind: NodeKind.Const, idx: 0 });
+    });
+  });
 });
