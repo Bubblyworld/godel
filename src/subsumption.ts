@@ -271,3 +271,149 @@ export function buildSignature(
 
   return sig;
 }
+
+/**
+ * Find the lowest set bit in a 32-bit integer
+ * Returns 32 if no bits are set
+ */
+export function lowestSetBit(n: number): number {
+  if (n === 0) return 32;
+  let bit = 0;
+  if ((n & 0xffff) === 0) {
+    bit += 16;
+    n >>>= 16;
+  }
+  if ((n & 0xff) === 0) {
+    bit += 8;
+    n >>>= 8;
+  }
+  if ((n & 0xf) === 0) {
+    bit += 4;
+    n >>>= 4;
+  }
+  if ((n & 0x3) === 0) {
+    bit += 2;
+    n >>>= 2;
+  }
+  if ((n & 0x1) === 0) {
+    bit += 1;
+  }
+  return bit;
+}
+
+/**
+ * Subsumption index for fast clause retrieval
+ */
+export class SubsumptionIndex {
+  /** Symbol masks computed once at startup */
+  private masks: SymbolMasks;
+
+  /** Level-1 hash table indexed by lowest set bit of function mask */
+  private buckets: Map<number, IndexedClause[]>;
+
+  /** Counter for generating clause IDs */
+  private nextClauseId: number;
+
+  /** Counter for clause age */
+  private nextAge: number;
+
+  constructor(symbolTable: SymbolTable) {
+    this.masks = createSymbolMasks(symbolTable);
+    this.buckets = new Map();
+    this.nextClauseId = 0;
+    this.nextAge = 0;
+
+    // Initialize buckets for all possible lowest bits (0-31) + one for empty signatures
+    for (let i = 0; i <= 32; i++) {
+      this.buckets.set(i, []);
+    }
+  }
+
+  /**
+   * Add a clause to the index
+   */
+  insert(clause: Clause): IndexedClause {
+    const signature = buildSignature(clause, this.masks);
+    const indexed: IndexedClause = {
+      ...clause,
+      signature,
+      id: this.nextClauseId++,
+      age: this.nextAge++,
+    };
+
+    // Find the lowest set bit in the function mask
+    const lowestBit = lowestSetBit(signature.funcs);
+
+    // Add to the appropriate bucket
+    const bucket = this.buckets.get(lowestBit);
+    if (bucket) {
+      bucket.push(indexed);
+    }
+
+    return indexed;
+  }
+
+  /**
+   * Find all clauses that might be subsumed by the given clause
+   */
+  findCandidates(clause: IndexedClause): IndexedClause[] {
+    const candidates: IndexedClause[] = [];
+    const sig = clause.signature;
+
+    // Only need to check the bucket for the lowest bit of clause's function mask
+    const lowestBit = lowestSetBit(sig.funcs);
+    const bucket = this.buckets.get(lowestBit);
+
+    if (bucket) {
+      for (const candidate of bucket) {
+        // Use fast signature check to filter
+        if (maybeSubsumes(sig, candidate.signature)) {
+          candidates.push(candidate);
+        }
+      }
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Remove a clause from the index
+   */
+  remove(clause: IndexedClause): void {
+    const lowestBit = lowestSetBit(clause.signature.funcs);
+    const bucket = this.buckets.get(lowestBit);
+
+    if (bucket) {
+      const index = bucket.findIndex((c) => c.id === clause.id);
+      if (index >= 0) {
+        bucket.splice(index, 1);
+      }
+    }
+  }
+
+  /**
+   * Get total number of indexed clauses
+   */
+  size(): number {
+    let total = 0;
+    for (const bucket of this.buckets.values()) {
+      total += bucket.length;
+    }
+    return total;
+  }
+
+  /**
+   * Full subsumption check with substitution finding
+   * Returns null if no subsumption, or the substitution if A subsumes B
+   */
+  subsumes(a: IndexedClause, b: IndexedClause): Substitution | null {
+    // Quick signature check first
+    if (!maybeSubsumes(a.signature, b.signature)) {
+      return null;
+    }
+
+    // TODO: Implement full subsumption algorithm in Week 3
+    // For now, just return null (no subsumption found)
+    return null;
+  }
+}
