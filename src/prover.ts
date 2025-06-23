@@ -1,111 +1,108 @@
 import { Formula, NodeKind, SymbolTable } from './ast';
 import { toCNF } from './cnf';
-import { renderFormula } from './parse';
-import {
-  applyResolution,
-  Clause,
-  cnfToClauses,
-  getResolutions,
-  Resolution,
-} from './resolution';
+import { Clause, cnfToClauses } from './resolution';
+import { ClauseSet } from './clause-set';
+import { IndexedClause, maybeSubsumes } from './subsumption';
 
+/**
+ * Attempts to prove a formula from a theory using resolution-based refutation.
+ * Uses the given-clause algorithm with subsumption checking to manage the search space.
+ *
+ * @param theory - Set of axioms/assumptions
+ * @param formula - Goal formula to prove
+ * @param st - Symbol table for the formulas
+ * @param maxClauses - Limit on total clauses to prevent runaway searches
+ * @returns true if formula is provable from theory, false otherwise
+ */
 export function proves(
   theory: Formula[],
   formula: Formula,
   st: SymbolTable,
-  iters: number = 5
+  maxClauses: number = 10000
 ): boolean {
-  const clauses = theory.flatMap((f) => cnfToClauses(toCNF(f, st)));
-  clauses.push(
-    ...cnfToClauses(
-      toCNF(
-        {
-          kind: NodeKind.Not,
-          arg: formula,
-        },
-        st
-      ),
-      true
-    )
-  );
+  const clauseSet = new ClauseSet(st);
 
-  const lookup = new Set<string>();
-  for (const clause of clauses) {
-    lookup.add(hashClause(clause));
+  // Refutation: prove by showing theory ∧ ¬formula is unsatisfiable
+  const initialClauses: Clause[] = [
+    ...theory.flatMap((f) => cnfToClauses(toCNF(f, st))),
+    ...cnfToClauses(
+      toCNF({ kind: NodeKind.Not, arg: formula }, st),
+      true // SOS: goal-derived clauses get priority
+    ),
+  ];
+
+  for (const clause of initialClauses) {
+    clauseSet.insert(clause as IndexedClause);
   }
 
-  for (let epoch = 0; epoch < iters; epoch++) {
-    const len = clauses.length;
-    let resolutions: Resolution[] = [];
-    for (let i = 0; i < len; i++) {
-      for (let j = i + 1; j < len; j++) {
-        resolutions.push(...getResolutions(clauses[i], clauses[j]));
+  let iterations = 0;
+
+  // Given-clause algorithm: repeatedly select and process clauses until
+  // we derive ⊥ (empty clause) or saturate the search space
+  while (clauseSet.hasPassiveClauses() && clauseSet.size() < maxClauses) {
+    iterations++;
+
+    const selected = clauseSet.selectClause();
+    if (!selected) break;
+
+    // Forward subsumption: is selected clause redundant?
+    let isSubsumed = false;
+    for (const active of clauseSet.getActive()) {
+      if (maybeSubsumes(active.signature, selected.signature)) {
+        if (clauseSet.getSubsumptionIndex().subsumes(active, selected)) {
+          isSubsumed = true;
+          break;
+        }
       }
     }
 
-    // Stick to only resolving SOS clauses:
-    resolutions = resolutions.filter((res) => res.left.sos || res.right.sos);
-
-    // Stick to unit resolutions if possible:
-    resolutions.sort((a, b) => {
-      const as = size(a);
-      const bs = size(b);
-      return as < bs ? -1 : as == bs ? 0 : 1;
-    });
-    if (resolutions.length > 0 && size(resolutions[0]) == 1) {
-      resolutions = resolutions.filter((res) => size(res) == 1);
+    if (isSubsumed) {
+      selected.noLongerPassive = true; // soft delete for efficiency
+      continue;
     }
 
-    let added = 0;
-    let maxSize = 0;
-    for (const res of resolutions) {
-      maxSize = Math.max(maxSize, size(res));
+    clauseSet.activate(selected);
 
-      const clause = applyResolution(res);
-      if (clause.atoms.length == 0) {
-        return true; // derived absurdity; formula has been proven
+    // Generate resolvents between selected clause and all active clauses
+    const resolvents = clauseSet.generateResolvents(selected);
+
+    for (const resolvent of resolvents) {
+      if (resolvent.atoms.length === 0) {
+        console.debug(
+          `Proof found after ${iterations} iterations with ${clauseSet.size()} clauses`
+        );
+        return true;
       }
 
-      const hash = hashClause(clause);
-      if (lookup.has(hash)) {
+      // SOS restriction: only keep resolvents if at least one parent was goal-derived
+      if (!selected.sos && !resolvent.sos) {
         continue;
       }
 
-      added++;
-      clauses.push(clause);
-      lookup.add(hash);
+      clauseSet.insert(resolvent);
     }
 
-    console.debug(
-      `Epoch ${epoch.toString().padStart(2, '0')}: added ${added} new clauses, max size ${maxSize}`
-    );
-    if (added == 0) {
-      break; // early-out
+    // Backward subsumption: remove existing clauses made redundant by selected
+    const candidates = clauseSet.getSubsumptionIndex().findCandidates(selected);
+    for (const candidate of candidates) {
+      if (
+        candidate.id !== selected.id &&
+        clauseSet.getSubsumptionIndex().subsumes(selected, candidate)
+      ) {
+        clauseSet.remove(candidate);
+      }
+    }
+
+    if (iterations % 100 === 0) {
+      console.debug(
+        `Iteration ${iterations}: ${clauseSet.activeSize()} active, ` +
+          `~${clauseSet.passiveSize()} passive, ${clauseSet.size()} total clauses`
+      );
     }
   }
 
-  console.debug('Final clauses:');
   console.debug(
-    clauses.map((clause) => {
-      return {
-        ...clause,
-        atoms: clause.atoms.map((atm) => renderFormula(atm, st)),
-      };
-    })
+    `Saturation reached after ${iterations} iterations with ${clauseSet.size()} clauses`
   );
-
-  return false; // failed to prove formula
-}
-
-/**
- * TODO: I think to make a prover more efficient we will have to implement
- * incremental hashing for formulas, and then also for clauses (we can take
- * hashes of underlying atoms, sort them and hash that, for instance).
- */
-function hashClause(clause: Clause): string {
-  return JSON.stringify(clause);
-}
-
-function size(res: Resolution): number {
-  return Math.min(res.left.atoms.length, res.right.atoms.length);
+  return false;
 }

@@ -19,7 +19,7 @@ describe('Peano Arithmetic', () => {
 
     console.log(renderFormula(ind, pa.st));
 
-    const proved = proves([...pa.axioms, ind], f, pa.st, 5);
+    const proved = proves([...pa.axioms, ind], f, pa.st);
     console.debug('Formula proved: ', proved);
   });
 });

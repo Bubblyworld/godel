@@ -176,3 +176,59 @@ The design prioritizes clarity and correctness over performance:
 - TypeScript's type system for safety
 
 This makes the codebase ideal for experimentation and learning, with the understanding that a production implementation would require significant optimization.
+
+## Comment Style Guidelines
+
+### Core Principles
+- **Focus on "why" not "how"**: Comments should explain the reasoning, mathematical concepts, or edge cases, not describe what the code mechanically does
+- **Use proper notation**: Feel free to use mathematical/logical notation (∧, ∨, ¬, ∀, ∃, →, ⊆, etc.) to clarify concepts
+- **Be concise**: Comments should be brief and to the point, avoiding redundancy with self-evident code
+- **Maintain technical accuracy**: Reference specific algorithms or theoretical concepts when relevant
+
+### Comment Types
+
+1. **JSDoc for public API**: All exported types, interfaces, and functions should have JSDoc comments
+   ```typescript
+   /**
+    * Attempts to prove a formula from a theory using resolution-based refutation.
+    * Uses the given-clause algorithm with subsumption checking to manage the search space.
+    */
+   ```
+
+2. **Inline type member comments**: Use single-line comments after type members
+   ```typescript
+   export const enum NodeKind {
+     Var,    // variable term x
+     Const,  // constant term c
+   }
+   ```
+
+3. **Implementation comments**: Explain non-obvious decisions or algorithmic steps
+   ```typescript
+   // Refutation: prove by showing theory ∧ ¬formula is unsatisfiable
+   // Forward subsumption: is selected clause redundant?
+   // SOS restriction: only keep resolvents if at least one parent was goal-derived
+   ```
+
+4. **Section markers**: Use comments to delineate logical sections of complex functions
+   ```typescript
+   // Forward subsumption check
+   // Backward subsumption
+   // Progress logging
+   ```
+
+### What NOT to Comment
+- Don't state the obvious: `// increment counter` is unnecessary
+- Don't repeat what types/function names already convey
+- Don't over-explain standard algorithms to readers assumed familiar with the domain
+
+### Development Best Practices
+- **Minimize feedback loops**: Always implement against test cases when possible. Write tests first or ensure tests exist before making changes
+- **Use the type system**: Let TypeScript's types document the code structure; comments should add semantic meaning the types can't convey
+- **Informal tone acceptable**: Occasional casual language is fine if it aids understanding (e.g., "NP-completeness is a bitch")
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
