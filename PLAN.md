@@ -116,7 +116,7 @@ export class ClauseSet {
   selectClause(): IndexedClause | null;
   
   /** Add new clause to passive set */
-  addPassive(clause: IndexedClause): void;
+  insert(clause: IndexedClause): void;
   
   /** Move clause from passive to active */
   activate(clause: IndexedClause): void;
@@ -201,9 +201,8 @@ export function proves(
   st: SymbolTable,
   maxClauses: number = 10000,
 ): boolean {
-  // Initialize subsumption index and clause set
-  const subsumptionIndex = new SubsumptionIndex(st);
-  const clauseSet = new ClauseSet();
+  // Initialize clause set (which contains subsumption index)
+  const clauseSet = new ClauseSet(st);
   
   // Convert initial theory and negated goal to clauses
   const initialClauses = [
@@ -213,50 +212,63 @@ export function proves(
   
   // Add all initial clauses to passive set
   for (const clause of initialClauses) {
-    const indexed = subsumptionIndex.insert(clause);
-    clauseSet.addPassive(indexed);
+    clauseSet.insert(clause as IndexedClause);
   }
   
-  // Main refutation loop
+  // Main given-clause loop
   while (clauseSet.hasPassiveClauses() && clauseSet.size() < maxClauses) {
     // Select next clause using Otter's mechanism
     const selected = clauseSet.selectClause();
     if (!selected) break;
     
-    // Move to active set and mark as active
+    // Forward subsumption check BEFORE activation
+    // TODO: Create a fast forward subsumption index for active clauses
+    let isSubsumed = false;
+    for (const active of clauseSet.getActive()) {
+      if (maybeSubsumes(active.signature, selected.signature)) {
+        if (clauseSet.getSubsumptionIndex().subsumes(active, selected)) {
+          isSubsumed = true;
+          break;
+        }
+      }
+    }
+    
+    // Skip if subsumed by an active clause
+    if (isSubsumed) {
+      // Soft delete from passive queues, it will never be viable
+      selected.noLongerPassive = true;
+      continue;
+    }
+    
+    // Now activate the clause
     clauseSet.activate(selected);
     
-    // Generate all possible resolvents
+    // Generate all possible resolvents with active clauses
     const resolvents = clauseSet.generateResolvents(selected);
+
+    // TODO(future): Generate possible factorings too
     
+    // Add resolvents to passive set
     for (const resolvent of resolvents) {
       // Check for empty clause (proof found)
       if (resolvent.atoms.length === 0) {
         return true;
       }
+
+      // TODO(future): Check for tautologies, do safe simplification
       
-      // Forward subsumption: skip if subsumed by existing
-      const candidates = subsumptionIndex.findCandidates(resolvent);
-      let isSubsumed = false;
-      for (const candidate of candidates) {
-        if (subsumptionIndex.subsumes(candidate, resolvent)) {
-          isSubsumed = true;
-          break;
-        }
+      clauseSet.insert(resolvent);
+    }
+    
+    // Backward subsumption: remove clauses subsumed by newly activated clause
+    // Check all clauses (active and passive) for subsumption
+    const candidates = clauseSet.getSubsumptionIndex().findCandidates(selected);
+    for (const candidate of candidates) {
+      if (candidate.id !== selected.id && 
+          clauseSet.getSubsumptionIndex().subsumes(selected, candidate)) {
+        // Use unified remove method which handles both active and passive
+        clauseSet.remove(candidate);
       }
-      if (isSubsumed) continue;
-      
-      // Backward subsumption: remove clauses subsumed by new one
-      for (const candidate of candidates) {
-        if (subsumptionIndex.subsumes(resolvent, candidate)) {
-          clauseSet.remove(candidate);
-          subsumptionIndex.remove(candidate);
-        }
-      }
-      
-      // Add new clause
-      const indexed = subsumptionIndex.insert(resolvent);
-      clauseSet.addPassive(indexed);
     }
   }
   
@@ -288,7 +300,7 @@ export function proves(
 1. **Week 1**: Core data structures (ClauseSignature, SymbolMasks, IndexedClause) ✅
 2. **Week 2**: Subsumption index with fast filtering ✅
 3. **Week 3**: Full subsumption algorithm with constraint matching ✅
-4. **Week 4**: Passive/Active clause architecture with priority queues
+4. **Week 4**: Passive/Active clause architecture with priority queues ✅
 5. **Week 5**: Integration into prover and testing
 
 ## Key Benefits
