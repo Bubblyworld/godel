@@ -298,22 +298,22 @@ export function resolve(
 
     const varIdx = st.varToIdx.get(kindOrSymbol);
     if (varIdx !== undefined) {
-      return st.vars[varIdx]!;
+      return st.vars[varIdx];
     }
 
     const constIdx = st.constToIdx.get(kindOrSymbol);
     if (constIdx !== undefined) {
-      return st.consts[constIdx]!;
+      return st.consts[constIdx];
     }
 
     const funIdx = st.funToIdx.get(kindOrSymbol);
     if (funIdx !== undefined) {
-      return st.funs[funIdx]!;
+      return st.funs[funIdx];
     }
 
     const relIdx = st.relToIdx.get(kindOrSymbol);
     if (relIdx !== undefined) {
-      return st.rels[relIdx]!;
+      return st.rels[relIdx];
     }
 
     throw new UnresolvedSymbolError(kindOrSymbol, st);
@@ -325,16 +325,16 @@ export function resolve(
   let res: SymbolEntry | undefined;
   switch (kind) {
     case SymbolKind.Var:
-      res = st!.vars[idx];
+      res = st.vars[idx];
       break;
     case SymbolKind.Const:
-      res = st!.consts[idx];
+      res = st.consts[idx];
       break;
     case SymbolKind.Fun:
-      res = st!.funs[idx];
+      res = st.funs[idx];
       break;
     case SymbolKind.Rel:
-      res = st!.rels[idx];
+      res = st.rels[idx];
       break;
     default:
       const _exhaustive: never = kind;
@@ -342,7 +342,7 @@ export function resolve(
   }
 
   if (res == null) {
-    throw new UnresolvedSymbolError(kind, idx, st!);
+    throw new UnresolvedSymbolError(kind, idx, st);
   } else {
     return res;
   }

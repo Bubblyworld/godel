@@ -1,6 +1,17 @@
-import { Clause } from './resolution';
-import { SymbolTable, NodeKind, Term, SymbolKind, Atom, equal } from './ast';
+import { Clause, renderClause } from './resolution';
+import {
+  SymbolTable,
+  NodeKind,
+  Term,
+  SymbolKind,
+  Atom,
+  equal,
+  resolve,
+  VarSymbol,
+} from './ast';
 import { Substitution, unifyAtoms, apply } from './unify';
+import { debugLogger, LogComponent, LogLevel } from './debug-logger';
+import { renderTerm } from './parse';
 
 export interface ClauseSignature {
   posPreds: number;
@@ -21,6 +32,7 @@ export interface IndexedClause extends Clause {
   id: number;
   noLongerPassive?: boolean;
   age: number;
+  fromParents?: number[];
 }
 
 export const MISC_HAS_EQUALITY = 1 << 0;
@@ -229,8 +241,8 @@ export class SubsumptionIndex {
 
   private nextAge: number;
 
-  constructor(symbolTable: SymbolTable) {
-    this.masks = createSymbolMasks(symbolTable);
+  constructor(private st: SymbolTable) {
+    this.masks = createSymbolMasks(st);
     this.buckets = new Map();
     this.nextClauseId = 0;
     this.nextAge = 0;
@@ -241,7 +253,7 @@ export class SubsumptionIndex {
     }
   }
 
-  insert(clause: Clause): IndexedClause {
+  index(clause: Clause): IndexedClause {
     const signature = this.buildSignature(clause);
     const indexed: IndexedClause = {
       ...clause,
@@ -249,16 +261,17 @@ export class SubsumptionIndex {
       id: this.nextClauseId++,
       age: this.nextAge++,
     };
+    return indexed;
+  }
 
-    const lowestBit = lowestSetBit(signature.funcs);
+  insert(clause: IndexedClause) {
+    const lowestBit = lowestSetBit(clause.signature.funcs);
     const bucket = this.buckets.get(lowestBit);
     if (bucket) {
-      bucket.push(indexed);
+      bucket.push(clause);
     } else {
       throw new Error('subsumption index buckets not initialised');
     }
-
-    return indexed;
   }
 
   findCandidates(clause: IndexedClause): IndexedClause[] {
@@ -309,7 +322,97 @@ export class SubsumptionIndex {
       return b.atoms.length === 0 ? new Map() : null;
     }
 
-    return this.findSubsumptionSubstitution(a, b);
+    const result = this.findSubsumptionSubstitution(a, b);
+
+    if (result) {
+      // Filter out identity mappings for the returned substitution
+      const filteredResult = this.filterIdentityMappings(result);
+
+      const subStr = this.renderSubstitution(filteredResult);
+      debugLogger.debug(
+        LogComponent.SUBSUMPTION,
+        `Clause #${a.id} "${renderClause(a, this.st)}" subsumes #${b.id} "${renderClause(b, this.st)}" with substitution: ${subStr}`
+      );
+
+      return filteredResult;
+    }
+
+    return null;
+  }
+
+  private filterIdentityMappings(sub: Substitution): Substitution {
+    const filtered = new Map<number, Term>();
+    for (const [varIdx, term] of sub) {
+      if (!(term.kind === NodeKind.Var && term.idx === varIdx)) {
+        filtered.set(varIdx, term);
+      }
+    }
+    return filtered;
+  }
+
+  private renderSubstitution(sub: Substitution): string {
+    if (sub.size === 0) return '{}';
+
+    const entries: string[] = [];
+    for (const [varIdx, term] of sub) {
+      // Skip identity mappings for cleaner output
+      if (term.kind === NodeKind.Var && term.idx === varIdx) {
+        continue;
+      }
+
+      const varSymbol = resolve(SymbolKind.Var, varIdx, this.st);
+      const varName = varSymbol.symbol.description || `x${varIdx}`;
+      const termStr = renderTerm(term, this.st);
+      entries.push(`${varName} ↦ ${termStr}`);
+    }
+    return entries.length > 0 ? `{${entries.join(', ')}}` : '{}';
+  }
+
+  // Matches a pattern atom against a target atom, only allowing substitutions
+  // for variables in the pattern. Returns null if no match is possible.
+  private matchAtoms(pattern: Atom, target: Atom): Substitution | null {
+    if (pattern.idx !== target.idx) return null;
+    if (pattern.args.length !== target.args.length) return null;
+
+    const sub = new Map<number, Term>();
+
+    const matchTerms = (p: Term, t: Term): boolean => {
+      if (p.kind === NodeKind.Var) {
+        // Pattern variable - can be matched to anything
+        if (sub.has(p.idx)) {
+          // Already bound - check consistency
+          return equal(sub.get(p.idx), t);
+        } else {
+          // Always record the binding to ensure consistency
+          sub.set(p.idx, t);
+          return true;
+        }
+      } else if (p.kind === NodeKind.Const) {
+        // Constants must match exactly
+        return t.kind === NodeKind.Const && p.idx === t.idx;
+      } else if (p.kind === NodeKind.FunApp) {
+        // Function applications must match structurally
+        if (t.kind !== NodeKind.FunApp) return false;
+        if (p.idx !== t.idx) return false;
+        if (p.args.length !== t.args.length) return false;
+
+        for (let i = 0; i < p.args.length; i++) {
+          if (!matchTerms(p.args[i], t.args[i])) return false;
+        }
+        return true;
+      }
+
+      return false;
+    };
+
+    // Match all arguments
+    for (let i = 0; i < pattern.args.length; i++) {
+      if (!matchTerms(pattern.args[i], target.args[i])) {
+        return null;
+      }
+    }
+
+    return sub;
   }
 
   // Backtracking algorithm to find consistent substitution across all literals
@@ -334,10 +437,11 @@ export class SubsumptionIndex {
 
         if (aNegated !== bNegated) continue;
 
-        const unifier = unifyAtoms(aAtom, bAtom);
-        if (!unifier) continue;
+        // Use matching instead of unification - only variables in A can be substituted
+        const matcher = this.matchAtoms(aAtom, bAtom);
+        if (!matcher) continue;
 
-        const mergedSub = this.mergeSubstitutions(substitution, unifier);
+        const mergedSub = this.mergeSubstitutions(substitution, matcher);
         if (!mergedSub) continue;
 
         const oldSubstitution = new Map(substitution);
@@ -375,36 +479,17 @@ export class SubsumptionIndex {
 
     for (const [varIdx, term2] of sub2) {
       if (result.has(varIdx)) {
-        const term1 = result.get(varIdx)!;
-
-        const applied1 = this.applySubstitution(result, term1);
-        const applied2 = this.applySubstitution(result, term2);
-
-        if (!equal(applied1, applied2)) {
+        const term1 = result.get(varIdx);
+        // For matching, we just need direct equality check
+        if (!equal(term1, term2)) {
           return null;
         }
       } else {
-        const applied = this.applySubstitution(result, term2);
-        result.set(varIdx, applied);
+        result.set(varIdx, term2);
       }
     }
 
     return result;
-  }
-
-  private applySubstitution(sub: Substitution, term: Term): Term {
-    if (term.kind === NodeKind.Var && sub.has(term.idx)) {
-      return this.applySubstitution(sub, sub.get(term.idx)!);
-    }
-
-    if (term.kind === NodeKind.FunApp) {
-      return {
-        ...term,
-        args: term.args.map((arg) => this.applySubstitution(sub, arg)),
-      };
-    }
-
-    return term;
   }
 
   buildSignature(clause: Clause): ClauseSignature {

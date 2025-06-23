@@ -427,7 +427,8 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexed1 = index.insert(clause1);
+      const indexed1 = index.index(clause1);
+      index.insert(indexed1);
       expect(indexed1.id).to.equal(0);
       expect(indexed1.age).to.equal(0);
       expect(indexed1.signature).to.exist;
@@ -439,7 +440,8 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexed2 = index.insert(clause2);
+      const indexed2 = index.index(clause2);
+      index.insert(indexed2);
       expect(indexed2.id).to.equal(1);
       expect(indexed2.age).to.equal(1);
       expect(index.size()).to.equal(2);
@@ -496,8 +498,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexed1 = index.insert(clause1);
-      const indexed2 = index.insert(clause2);
+      const indexed1 = index.index(clause1);
+      index.insert(indexed1);
+      const indexed2 = index.index(clause2);
+      index.insert(indexed2);
 
       // They should have different function masks
       expect(indexed1.signature.funcs).to.not.equal(indexed2.signature.funcs);
@@ -545,8 +549,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedGeneral = index.insert(general);
-      const indexedSpecific = index.insert(specific);
+      const indexedGeneral = index.index(general);
+      index.insert(indexedGeneral);
+      const indexedSpecific = index.index(specific);
+      index.insert(indexedSpecific);
 
       // General clause should find specific clause as candidate
       const candidates = index.findCandidates(indexedGeneral);
@@ -572,7 +578,8 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexed = index.insert(clause);
+      const indexed = index.index(clause);
+      index.insert(indexed);
       expect(index.size()).to.equal(1);
 
       index.remove(indexed);
@@ -605,8 +612,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexed1 = index.insert(clause1);
-      const indexed2 = index.insert(clause2);
+      const indexed1 = index.index(clause1);
+      index.insert(indexed1);
+      const indexed2 = index.index(clause2);
+      index.insert(indexed2);
 
       // Both should go to bucket 32 (no bits set)
       expect(indexed1.signature.funcs).to.equal(0);
@@ -642,12 +651,13 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexed = index.insert(clause);
+      const indexed = index.index(clause);
+      index.insert(indexed);
 
       // A clause always subsumes itself
       const sub = index.subsumes(indexed, indexed);
       expect(sub).to.not.be.null;
-      expect(sub).to.deep.equal(new Map()); // Identity substitution
+      expect(sub!.size).to.equal(0); // Identity substitution should be empty
     });
 
     it('should detect subsumption with variable renaming', () => {
@@ -687,13 +697,173 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedA = index.insert(clauseA);
-      const indexedB = index.insert(clauseB);
+      const indexedA = index.index(clauseA);
+      index.insert(indexedA);
+      const indexedB = index.index(clauseB);
+      index.insert(indexedB);
 
       // P(x) subsumes P(y) with substitution {x -> y}
       const sub = index.subsumes(indexedA, indexedB);
       expect(sub).to.not.be.null;
       expect(sub!.get(0)).to.deep.equal({ kind: NodeKind.Var, idx: 1 });
+    });
+
+    it('should NOT incorrectly subsume reflexivity into transitivity', () => {
+      // This test catches another subsumption bug where =(x,x) was incorrectly
+      // found to subsume the transitivity axiom ¬=(x,y) ∨ ¬=(y,z) ∨ =(x,z)
+      const st = createSymbolTable();
+      const eq = Symbol('=');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+
+      add(st, SymbolKind.Rel, eq, 2);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, y);
+      add(st, SymbolKind.Var, z);
+
+      const index = new SubsumptionIndex(st);
+
+      // Clause A: =(x, x) (reflexivity)
+      const reflexivity: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0, // =
+            args: [
+              { kind: NodeKind.Var, idx: 0 }, // x
+              { kind: NodeKind.Var, idx: 0 }, // x
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // Clause B: ¬=(x, y) ∨ ¬=(y, z) ∨ =(x, z) (transitivity)
+      const transitivity: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0, // =
+            args: [
+              { kind: NodeKind.Var, idx: 0 }, // x
+              { kind: NodeKind.Var, idx: 1 }, // y
+            ],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 0, // =
+            args: [
+              { kind: NodeKind.Var, idx: 1 }, // y
+              { kind: NodeKind.Var, idx: 2 }, // z
+            ],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 0, // =
+            args: [
+              { kind: NodeKind.Var, idx: 0 }, // x
+              { kind: NodeKind.Var, idx: 2 }, // z
+            ],
+          },
+        ],
+        negated: [true, true, false],
+        sos: false,
+      };
+
+      const indexedRefl = index.index(reflexivity);
+      index.insert(indexedRefl);
+      const indexedTrans = index.index(transitivity);
+      index.insert(indexedTrans);
+
+      // Reflexivity should NOT subsume transitivity!
+      // Even with substitution {x ↦ z}, we get =(z,z) which doesn't match =(x,z)
+      const sub = index.subsumes(indexedRefl, indexedTrans);
+      expect(sub).to.be.null;
+    });
+
+    it('should NOT subsume when substitution is required on both sides', () => {
+      // This test catches the bug where subsumption was incorrectly applying
+      // substitutions to both clauses instead of just the subsuming clause
+      const st = createSymbolTable();
+      const eq = Symbol('=');
+      const plus = Symbol('+');
+      const x = Symbol('x');
+      const x0 = Symbol('x0');
+      const zero = Symbol('0');
+
+      add(st, SymbolKind.Rel, eq, 2);
+      add(st, SymbolKind.Fun, plus, 2);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, x0);
+      add(st, SymbolKind.Const, zero);
+
+      const index = new SubsumptionIndex(st);
+
+      // Clause A: =(+(x, 0), x)
+      const clauseA: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0, // =
+            args: [
+              {
+                kind: NodeKind.FunApp,
+                idx: 0, // +
+                args: [
+                  { kind: NodeKind.Var, idx: 0 }, // x
+                  { kind: NodeKind.Const, idx: 0 }, // 0
+                ],
+              },
+              { kind: NodeKind.Var, idx: 0 }, // x
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // Clause B: ¬=(+(0, 0), 0) ∨ =(+(0, F0(x0)), F0(x0)) ∨ =(+(0, x0), x0)
+      // For simplicity, we'll test with just the last disjunct: =(+(0, x0), x0)
+      const clauseB: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0, // =
+            args: [
+              {
+                kind: NodeKind.FunApp,
+                idx: 0, // +
+                args: [
+                  { kind: NodeKind.Const, idx: 0 }, // 0
+                  { kind: NodeKind.Var, idx: 1 }, // x0
+                ],
+              },
+              { kind: NodeKind.Var, idx: 1 }, // x0
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      const indexedA = index.index(clauseA);
+      index.insert(indexedA);
+      const indexedB = index.index(clauseB);
+      index.insert(indexedB);
+
+      // A should NOT subsume B!
+      // A says: =(+(x, 0), x) for any x
+      // B says: =(+(0, x0), x0) for any x0
+      // These are structurally different - we can't make A match B with just
+      // a substitution on A's variables
+      const sub = index.subsumes(indexedA, indexedB);
+      expect(sub).to.be.null;
+
+      // B should also not subsume A
+      const subReverse = index.subsumes(indexedB, indexedA);
+      expect(subReverse).to.be.null;
     });
 
     it('should detect subsumption with constants', () => {
@@ -733,8 +903,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedGeneral = index.insert(general);
-      const indexedSpecific = index.insert(specific);
+      const indexedGeneral = index.index(general);
+      index.insert(indexedGeneral);
+      const indexedSpecific = index.index(specific);
+      index.insert(indexedSpecific);
 
       // P(x) subsumes P(c) with {x -> c}
       const sub = index.subsumes(indexedGeneral, indexedSpecific);
@@ -781,8 +953,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedPos = index.insert(positive);
-      const indexedNeg = index.insert(negative);
+      const indexedPos = index.index(positive);
+      index.insert(indexedPos);
+      const indexedNeg = index.index(negative);
+      index.insert(indexedNeg);
 
       // P(x) does not subsume !P(x)
       expect(index.subsumes(indexedPos, indexedNeg)).to.be.null;
@@ -834,8 +1008,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedSingle = index.insert(single);
-      const indexedDouble = index.insert(double);
+      const indexedSingle = index.index(single);
+      index.insert(indexedSingle);
+      const indexedDouble = index.index(double);
+      index.insert(indexedDouble);
 
       // P(x) subsumes P(x) | Q(y)
       const sub = index.subsumes(indexedSingle, indexedDouble);
@@ -897,8 +1073,10 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedConsistent = index.insert(consistent);
-      const indexedSpecific = index.insert(specific);
+      const indexedConsistent = index.index(consistent);
+      index.insert(indexedConsistent);
+      const indexedSpecific = index.index(specific);
+      index.insert(indexedSpecific);
 
       // P(x) | P(x) can subsume P(a) | P(b) because clauses can be shared
       const noSub = index.subsumes(indexedConsistent, indexedSpecific);
@@ -958,13 +1136,70 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedGeneral = index.insert(general);
-      const indexedSpecific = index.insert(specific);
+      const indexedGeneral = index.index(general);
+      index.insert(indexedGeneral);
+      const indexedSpecific = index.index(specific);
+      index.insert(indexedSpecific);
 
       // P(f(x)) subsumes P(f(c)) with {x -> c}
       const sub = index.subsumes(indexedGeneral, indexedSpecific);
       expect(sub).to.not.be.null;
       expect(sub!.get(0)).to.deep.equal({ kind: NodeKind.Const, idx: 0 });
+    });
+
+    it('should handle edge case with pattern variable occurring multiple times', () => {
+      const st = createSymbolTable();
+      const P = Symbol('P');
+      const x = Symbol('x');
+      const y = Symbol('y');
+      const z = Symbol('z');
+      add(st, SymbolKind.Rel, P, 2);
+      add(st, SymbolKind.Var, x);
+      add(st, SymbolKind.Var, y);
+      add(st, SymbolKind.Var, z);
+
+      const index = new SubsumptionIndex(st);
+
+      // Clause: P(x, x)
+      const clause1: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [
+              { kind: NodeKind.Var, idx: 0 },
+              { kind: NodeKind.Var, idx: 0 },
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      // Clause: P(y, z)
+      const clause2: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [
+              { kind: NodeKind.Var, idx: 1 },
+              { kind: NodeKind.Var, idx: 2 },
+            ],
+          },
+        ],
+        negated: [false],
+        sos: false,
+      };
+
+      const indexed1 = index.index(clause1);
+      index.insert(indexed1);
+      const indexed2 = index.index(clause2);
+      index.insert(indexed2);
+
+      // P(x, x) should NOT subsume P(y, z) because x cannot match both y and z
+      const sub = index.subsumes(indexed1, indexed2);
+      expect(sub).to.be.null;
     });
 
     it('should handle subsumption with repeated variables', () => {
@@ -1039,9 +1274,12 @@ describe('subsumption', () => {
         sos: false,
       };
 
-      const indexedGeneral = index.insert(general);
-      const indexedSpecific1 = index.insert(specific1);
-      const indexedSpecific2 = index.insert(specific2);
+      const indexedGeneral = index.index(general);
+      index.insert(indexedGeneral);
+      const indexedSpecific1 = index.index(specific1);
+      index.insert(indexedSpecific1);
+      const indexedSpecific2 = index.index(specific2);
+      index.insert(indexedSpecific2);
 
       // P(x) | Q(x) subsumes P(a) | Q(a) with {x -> a}
       const sub1 = index.subsumes(indexedGeneral, indexedSpecific1);

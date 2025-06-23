@@ -24,7 +24,7 @@ export function apply(sub: Substitution, f: Term | Formula): Term | Formula {
   const isBoundVar: Set<number> = new Set();
   const transformVar = (f: Term & { kind: NodeKind.Var }) => {
     if (sub.has(f.idx) && !isBoundVar.has(f.idx)) {
-      return sub.get(f.idx)!;
+      return sub.get(f.idx);
     } else {
       return f;
     }
@@ -101,7 +101,7 @@ export function unify(terms: [Term, Term][]): Substitution | undefined {
     if (stepped) continue;
 
     // Eliminate or Check steps:
-    for (let [i, [left, right]] of terms.entries()) {
+    for (const [i, [left, right]] of terms.entries()) {
       if (left.kind === NodeKind.Var) {
         const rightFrees = getFreeVars(right);
         if (rightFrees.includes(left.idx)) {
@@ -133,7 +133,7 @@ export function unify(terms: [Term, Term][]): Substitution | undefined {
     if (stepped) continue;
 
     // Decompose or Conflict steps:
-    for (let [i, [left, right]] of terms.entries()) {
+    for (const [i, [left, right]] of terms.entries()) {
       if (left.kind == NodeKind.Var || right.kind == NodeKind.Var) continue;
 
       // no solution

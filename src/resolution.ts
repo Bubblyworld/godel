@@ -1,5 +1,15 @@
-import { And, Atom, Formula, NodeKind, Not, Or } from './ast';
+import {
+  And,
+  Atom,
+  Formula,
+  NodeKind,
+  Not,
+  Or,
+  SymbolTable,
+  Term,
+} from './ast';
 import { apply, Substitution, unifyAtoms } from './unify';
+import { renderFormula } from './parse';
 
 /**
  * A clause represents a disjunction of atomic formulas or their negations.
@@ -108,6 +118,68 @@ export function getResolutions(a: Clause, b: Clause): Resolution[] {
 }
 
 /**
+ * Checks if two terms are structurally equal.
+ */
+function termsEqual(a: Term, b: Term): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.idx !== b.idx) return false;
+
+  if (a.kind === NodeKind.FunApp && b.kind === NodeKind.FunApp) {
+    if (a.args.length !== b.args.length) return false;
+    for (let i = 0; i < a.args.length; i++) {
+      if (!termsEqual(a.args[i], b.args[i])) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Checks if two atoms are structurally equal.
+ */
+function atomsEqual(a: Atom, b: Atom): boolean {
+  if (a.idx !== b.idx) return false;
+  if (a.args.length !== b.args.length) return false;
+
+  for (let i = 0; i < a.args.length; i++) {
+    if (!termsEqual(a.args[i], b.args[i])) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Removes duplicate literals from a clause.
+ */
+function removeDuplicates(
+  atoms: Atom[],
+  negated: boolean[]
+): { atoms: Atom[]; negated: boolean[] } {
+  const uniqueAtoms: Atom[] = [];
+  const uniqueNegated: boolean[] = [];
+
+  for (let i = 0; i < atoms.length; i++) {
+    let isDuplicate = false;
+    for (let j = 0; j < uniqueAtoms.length; j++) {
+      if (
+        negated[i] === uniqueNegated[j] &&
+        atomsEqual(atoms[i], uniqueAtoms[j])
+      ) {
+        isDuplicate = true;
+        break;
+      }
+    }
+
+    if (!isDuplicate) {
+      uniqueAtoms.push(atoms[i]);
+      uniqueNegated.push(negated[i]);
+    }
+  }
+
+  return { atoms: uniqueAtoms, negated: uniqueNegated };
+}
+
+/**
  * Applies a resolution to create a new clause. The new clause contains atoms
  * from both clauses (except the unified atoms) with the substitution applied.
  */
@@ -131,9 +203,106 @@ export function applyResolution(resolution: Resolution): Clause {
     }
   }
 
+  // Remove duplicate literals
+  const cleaned = removeDuplicates(atoms, negated);
+
   return {
-    atoms,
-    negated,
+    atoms: cleaned.atoms,
+    negated: cleaned.negated,
     sos: left.sos || right.sos,
   };
+}
+
+/**
+ * Represents a factoring opportunity where two literals in a clause can be unified.
+ */
+export type Factor = {
+  clause: Clause;
+  idx1: number;
+  idx2: number;
+  sub: Substitution;
+};
+
+/**
+ * Finds all possible factors in a clause by attempting to unify pairs of literals
+ * with the same polarity.
+ */
+export function getFactors(clause: Clause): Factor[] {
+  const factors: Factor[] = [];
+
+  // Try to unify every pair of literals with same polarity
+  for (let i = 0; i < clause.atoms.length; i++) {
+    for (let j = i + 1; j < clause.atoms.length; j++) {
+      // Only factor literals with same polarity
+      if (clause.negated[i] === clause.negated[j]) {
+        const sub = unifyAtoms(clause.atoms[i], clause.atoms[j]);
+        if (sub) {
+          factors.push({ clause, idx1: i, idx2: j, sub });
+        }
+      }
+    }
+  }
+
+  return factors;
+}
+
+/**
+ * Applies a factor to create a new clause by unifying two literals and removing one.
+ */
+export function applyFactor(factor: Factor): Clause {
+  const { clause, idx2, sub } = factor;
+
+  // Apply substitution to all atoms
+  const atoms: Atom[] = [];
+  const negated: boolean[] = [];
+
+  for (let i = 0; i < clause.atoms.length; i++) {
+    // Skip the second unified atom (remove it)
+    if (i === idx2) continue;
+
+    const atom = apply(sub, clause.atoms[i]) as Atom;
+    atoms.push(atom);
+    negated.push(clause.negated[i]);
+  }
+
+  // Remove duplicates that may have been created
+  const cleaned = removeDuplicates(atoms, negated);
+
+  return {
+    atoms: cleaned.atoms,
+    negated: cleaned.negated,
+    sos: clause.sos,
+  };
+}
+
+/**
+ * Checks if a substitution only binds variables (not function applications or constants).
+ * Such substitutions are "safe" because the factored clause subsumes the original.
+ */
+export function isVariableOnlySubstitution(sub: Substitution): boolean {
+  for (const [, term] of sub) {
+    // If any binding maps to a non-variable term, it's not variable-only
+    if (term.kind !== NodeKind.Var) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Renders a clause as a human-readable string.
+ */
+export function renderClause(clause: Clause, st: SymbolTable): string {
+  if (clause.atoms.length === 0) {
+    return '⊥'; // empty clause
+  }
+
+  const literals = clause.atoms.map((atom, i) => {
+    const formula: Formula = clause.negated[i]
+      ? { kind: NodeKind.Not, arg: atom }
+      : atom;
+    return renderFormula(formula, st);
+  });
+
+  return literals.join(' ∨ ');
 }

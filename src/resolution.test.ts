@@ -5,6 +5,9 @@ import {
   Clause,
   getResolutions,
   applyResolution,
+  getFactors,
+  applyFactor,
+  isVariableOnlySubstitution,
 } from './resolution';
 import { toCNF } from './cnf';
 import {
@@ -203,6 +206,51 @@ describe('resolution.ts', () => {
 
       const resolvent = applyResolution(rs[0]);
       expect(resolvent.atoms).to.have.length(0); // Empty clause
+    });
+
+    it('should remove duplicate literals after resolution', () => {
+      let f = parseFormula('P(x) | Q(a) & !P(y) | Q(a)', st);
+      f = toCNF(f, st);
+      const cs = cnfToClauses(f);
+      const rs = getResolutions(cs[0], cs[1]);
+      expect(rs.length).to.equal(1);
+
+      const resolvent = applyResolution(rs[0]);
+      expect(resolvent.atoms).to.have.length(1); // Should have only one Q(a)
+    });
+
+    it('should handle multiple duplicates', () => {
+      let f = parseFormula('P(x) | Q(a) | Q(a) & !P(y) | Q(a) | R(b)', st);
+      f = toCNF(f, st);
+      const cs = cnfToClauses(f);
+      const rs = getResolutions(cs[0], cs[1]);
+      expect(rs.length).to.equal(1);
+
+      const resolvent = applyResolution(rs[0]);
+      expect(resolvent.atoms).to.have.length(2); // Should have Q(a) and R(b)
+    });
+
+    it('should preserve distinct literals with same predicate but different args', () => {
+      let f = parseFormula('P(x) | Q(a) & !P(y) | Q(b)', st);
+      f = toCNF(f, st);
+      const cs = cnfToClauses(f);
+      const rs = getResolutions(cs[0], cs[1]);
+      expect(rs.length).to.equal(1);
+
+      const resolvent = applyResolution(rs[0]);
+      expect(resolvent.atoms).to.have.length(2); // Should have Q(a) and Q(b)
+    });
+
+    it('should handle duplicate removal with negated literals', () => {
+      let f = parseFormula('P(x) | !Q(a) & !P(y) | !Q(a)', st);
+      f = toCNF(f, st);
+      const cs = cnfToClauses(f);
+      const rs = getResolutions(cs[0], cs[1]);
+      expect(rs.length).to.equal(1);
+
+      const resolvent = applyResolution(rs[0]);
+      expect(resolvent.atoms).to.have.length(1); // Should have only one !Q(a)
+      expect(resolvent.negated[0]).to.equal(true);
     });
   });
 
@@ -434,6 +482,197 @@ describe('resolution.ts', () => {
       expect(clauses[0].atoms).to.have.length(2); // P ∨ Q
       expect(clauses[1].atoms).to.have.length(2); // R ∨ S
       expect(clauses[2].atoms).to.have.length(1); // T
+    });
+  });
+
+  describe('getFactors', () => {
+    let st: SymbolTable;
+
+    beforeEach(() => {
+      st = createSymbolTable();
+    });
+
+    it('should find no factors in clause with no repeated predicates', () => {
+      const f = parseFormula('P(x) | Q(y)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      expect(factors).to.have.length(0);
+    });
+
+    it('should find factors in clause with unifiable literals', () => {
+      const f = parseFormula('P(x) | P(a)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      expect(factors).to.have.length(1);
+      expect(factors[0].idx1).to.equal(0);
+      expect(factors[0].idx2).to.equal(1);
+      expect(factors[0].sub.size).to.equal(1); // x -> a
+    });
+
+    it('should not factor literals with different polarities', () => {
+      const f = parseFormula('P(x) | !P(a)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      expect(factors).to.have.length(0);
+    });
+
+    it('should find multiple factors when possible', () => {
+      const f = parseFormula('P(x) | P(y) | P(a)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      expect(factors).to.have.length(3); // (0,1), (0,2), (1,2)
+    });
+
+    it('should handle function terms in factoring', () => {
+      const f = parseFormula('P(f(x)) | P(f(a))', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      expect(factors).to.have.length(1);
+    });
+  });
+
+  describe('applyFactor', () => {
+    let st: SymbolTable;
+
+    beforeEach(() => {
+      st = createSymbolTable();
+    });
+
+    it('should produce unit clause from binary clause', () => {
+      const f = parseFormula('P(x) | P(a)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      expect(factors).to.have.length(1);
+
+      const factored = applyFactor(factors[0]);
+      expect(factored.atoms).to.have.length(1); // P(a)
+      expect(factored.atoms[0].args[0]).to.have.property('idx');
+    });
+
+    it('should handle factoring with multiple literals', () => {
+      const f = parseFormula('P(x) | Q(y) | P(a)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      // Find the factor that unifies P(x) with P(a)
+      const factor = factors.find((f) => f.idx1 === 0 && f.idx2 === 2);
+      expect(factor).to.not.be.undefined;
+
+      const factored = applyFactor(factor!);
+      expect(factored.atoms).to.have.length(2); // P(a) | Q(y)
+    });
+
+    it('should preserve SOS status', () => {
+      const clause: Clause = {
+        atoms: [
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Var, idx: 0 }],
+          },
+          {
+            kind: NodeKind.Atom,
+            idx: 0,
+            args: [{ kind: NodeKind.Const, idx: 0 }],
+          },
+        ],
+        negated: [false, false],
+        sos: true,
+      };
+
+      const factors = getFactors(clause);
+      expect(factors).to.have.length(1);
+
+      const factored = applyFactor(factors[0]);
+      expect(factored.sos).to.be.true;
+    });
+
+    it('should remove duplicates after factoring', () => {
+      const f = parseFormula('P(x) | P(a) | P(a)', st);
+      const cnf = toCNF(f, st);
+      const clauses = cnfToClauses(cnf);
+
+      const factors = getFactors(clauses[0]);
+      const factor = factors.find(
+        (f) => f.idx1 === 0 && (f.idx2 === 1 || f.idx2 === 2)
+      );
+      expect(factor).to.not.be.undefined;
+
+      const factored = applyFactor(factor!);
+      expect(factored.atoms).to.have.length(1); // Just P(a), no duplicates
+    });
+  });
+
+  describe('isVariableOnlySubstitution', () => {
+    let st: SymbolTable;
+
+    beforeEach(() => {
+      st = createSymbolTable();
+    });
+
+    it('should return true for variable-to-variable substitution', () => {
+      const x = add(st, SymbolKind.Var, Symbol('x'));
+      const y = add(st, SymbolKind.Var, Symbol('y'));
+
+      const sub = new Map();
+      sub.set(x.idx, { kind: NodeKind.Var, idx: y.idx });
+
+      expect(isVariableOnlySubstitution(sub)).to.be.true;
+    });
+
+    it('should return false for variable-to-constant substitution', () => {
+      const x = add(st, SymbolKind.Var, Symbol('x'));
+      const a = add(st, SymbolKind.Const, Symbol('a'));
+
+      const sub = new Map();
+      sub.set(x.idx, { kind: NodeKind.Const, idx: a.idx });
+
+      expect(isVariableOnlySubstitution(sub)).to.be.false;
+    });
+
+    it('should return false for variable-to-function substitution', () => {
+      const x = add(st, SymbolKind.Var, Symbol('x'));
+      const f = add(st, SymbolKind.Fun, Symbol('f'), 1);
+      const a = add(st, SymbolKind.Const, Symbol('a'));
+
+      const sub = new Map();
+      sub.set(x.idx, {
+        kind: NodeKind.FunApp,
+        idx: f.idx,
+        args: [{ kind: NodeKind.Const, idx: a.idx }],
+      });
+
+      expect(isVariableOnlySubstitution(sub)).to.be.false;
+    });
+
+    it('should return true for empty substitution', () => {
+      const sub = new Map();
+      expect(isVariableOnlySubstitution(sub)).to.be.true;
+    });
+
+    it('should return true for multiple variable-only substitutions', () => {
+      const x = add(st, SymbolKind.Var, Symbol('x'));
+      const y = add(st, SymbolKind.Var, Symbol('y'));
+      const z = add(st, SymbolKind.Var, Symbol('z'));
+
+      const sub = new Map();
+      sub.set(x.idx, { kind: NodeKind.Var, idx: y.idx });
+      sub.set(z.idx, { kind: NodeKind.Var, idx: y.idx });
+
+      expect(isVariableOnlySubstitution(sub)).to.be.true;
     });
   });
 });

@@ -163,25 +163,25 @@ export class Parser {
 
     // existing bindings for all symbol types
     for (const c of st.consts) {
-      const name = c.symbol.description!;
+      const name = c.symbol.description;
       if (!this.bindings.has(name)) {
         this.bindings.set(name, c);
       }
     }
     for (const f of st.funs) {
-      const name = f.symbol.description!;
+      const name = f.symbol.description;
       if (!this.bindings.has(name)) {
         this.bindings.set(name, f);
       }
     }
     for (const r of st.rels) {
-      const name = r.symbol.description!;
+      const name = r.symbol.description;
       if (!this.bindings.has(name)) {
         this.bindings.set(name, r);
       }
     }
     for (const v of st.vars) {
-      const name = v.symbol.description!;
+      const name = v.symbol.description;
       if (!this.bindings.has(name)) {
         this.bindings.set(name, v);
       }
@@ -293,7 +293,7 @@ export class Parser {
 
       const originalBindings = new Map<string, SymbolEntry>();
       for (const v of vars) {
-        const name = v.symbol.description!;
+        const name = v.symbol.description;
         const original = this.bindings.get(name);
         if (original) {
           originalBindings.set(name, original);
@@ -304,7 +304,7 @@ export class Parser {
       const body = this.parseQuantified();
 
       for (const v of vars) {
-        const name = v.symbol.description!;
+        const name = v.symbol.description;
         const original = originalBindings.get(name);
         if (original) {
           this.bindings.set(name, original);

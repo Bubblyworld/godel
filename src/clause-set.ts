@@ -1,6 +1,119 @@
 import { IndexedClause, SubsumptionIndex } from './subsumption';
-import { SymbolTable } from './ast';
-import { getResolutions, applyResolution } from './resolution';
+import { SymbolTable, NodeKind, Term, Atom } from './ast';
+import {
+  getResolutions,
+  applyResolution,
+  renderClause,
+  Clause,
+  getFactors,
+  applyFactor,
+  isVariableOnlySubstitution,
+} from './resolution';
+import { debugLogger, LogComponent, LogLevel } from './debug-logger';
+
+/**
+ * Calculate the depth of a term. Variables and constants have depth 1,
+ * function applications have depth 1 + max depth of arguments.
+ */
+function termDepth(term: Term): number {
+  switch (term.kind) {
+    case NodeKind.Var:
+    case NodeKind.Const:
+      return 1;
+    case NodeKind.FunApp:
+      return 1 + Math.max(...term.args.map(termDepth), 0);
+  }
+}
+
+/**
+ * Calculate the total symbol count in a term, which represents the
+ * size of the term tree.
+ */
+function termSize(term: Term): number {
+  switch (term.kind) {
+    case NodeKind.Var:
+    case NodeKind.Const:
+      return 1;
+    case NodeKind.FunApp:
+      return 1 + term.args.reduce((sum, arg) => sum + termSize(arg), 0);
+  }
+}
+
+/**
+ * Calculate a complexity score for a clause that considers both the number
+ * of atoms and the complexity of terms within those atoms. This helps
+ * penalize clauses with deeply nested function applications (like S(S(S(...)))).
+ */
+function clauseComplexity(clause: IndexedClause): number {
+  let totalDepth = 0;
+  let totalSize = 0;
+  const atomCount = clause.atoms.length;
+
+  // Sum up the depth and size of all terms in all atoms
+  for (const atom of clause.atoms) {
+    for (const term of atom.args) {
+      totalDepth += termDepth(term);
+      totalSize += termSize(term);
+    }
+  }
+
+  // Heuristic formula that balances:
+  // - Number of atoms (want fewer atoms)
+  // - Average term depth (penalize deep nesting like S(S(S(...))))
+  // - Total term size (penalize large terms)
+  // The weights can be tuned based on performance
+  const avgDepth =
+    clause.atoms.length > 0 && totalSize > 0 ? totalDepth / totalSize : 0;
+  return atomCount * 10 + avgDepth * 5 + totalSize;
+}
+
+/**
+ * Checks if two terms are structurally equal.
+ */
+function termsEqual(a: Term, b: Term): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.idx !== b.idx) return false;
+
+  if (a.kind === NodeKind.FunApp && b.kind === NodeKind.FunApp) {
+    if (a.args.length !== b.args.length) return false;
+    for (let i = 0; i < a.args.length; i++) {
+      if (!termsEqual(a.args[i], b.args[i])) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Checks if two atoms are structurally equal.
+ */
+function atomsEqual(a: Atom, b: Atom): boolean {
+  if (a.idx !== b.idx) return false;
+  if (a.args.length !== b.args.length) return false;
+
+  for (let i = 0; i < a.args.length; i++) {
+    if (!termsEqual(a.args[i], b.args[i])) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Checks if a clause is a tautology (contains P and ¬P for some atom P).
+ */
+function isTautology(clause: Clause): boolean {
+  for (let i = 0; i < clause.atoms.length; i++) {
+    for (let j = i + 1; j < clause.atoms.length; j++) {
+      if (
+        clause.negated[i] !== clause.negated[j] &&
+        atomsEqual(clause.atoms[i], clause.atoms[j])
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * Priority queue implementation for clause selection
@@ -26,7 +139,7 @@ export class PriorityQueue<T> {
    */
   pop(): T | null {
     if (this.heap.length === 0) return null;
-    if (this.heap.length === 1) return this.heap.pop()!.item;
+    if (this.heap.length === 1) return this.heap.pop().item;
 
     const min = this.heap[0];
     this.heap[0] = this.heap.pop()!;
@@ -162,8 +275,8 @@ export class ClauseSet {
    */
   private subsumptionIndex: SubsumptionIndex;
 
-  constructor(symbolTable: SymbolTable) {
-    this.subsumptionIndex = new SubsumptionIndex(symbolTable);
+  constructor(private st: SymbolTable) {
+    this.subsumptionIndex = new SubsumptionIndex(st);
 
     this.passive = {
       ageQueue: new PriorityQueue<IndexedClause>((a, b) => a - b),
@@ -178,11 +291,19 @@ export class ClauseSet {
    */
   selectClause(): IndexedClause | null {
     let queue: PriorityQueue<IndexedClause>;
+    let queueName: string;
     if (this.counter % (this.ratio + 1) === 0) {
       queue = this.passive.ageQueue;
+      queueName = 'age-based';
     } else {
       queue = this.passive.heuristicQueue;
+      queueName = 'heuristic';
     }
+
+    debugLogger.trace(
+      LogComponent.CLAUSE_SELECT,
+      `Attempting to select from ${queueName} queue (counter: ${this.counter})`
+    );
 
     let clause = this.extract(queue);
     if (!clause) {
@@ -190,11 +311,24 @@ export class ClauseSet {
         queue === this.passive.ageQueue
           ? this.passive.heuristicQueue
           : this.passive.ageQueue;
+      const otherQueueName =
+        queueName === 'age-based' ? 'heuristic' : 'age-based';
+      debugLogger.trace(
+        LogComponent.CLAUSE_SELECT,
+        `${queueName} queue empty, trying ${otherQueueName} queue`
+      );
       clause = this.extract(otherQueue);
     }
 
     if (clause) {
       this.counter++;
+      debugLogger.logClause(
+        LogComponent.CLAUSE_SELECT,
+        LogLevel.DEBUG,
+        `Selected clause`,
+        clause,
+        () => renderClause(clause, this.st)
+      );
     }
 
     return clause;
@@ -211,14 +345,31 @@ export class ClauseSet {
   }
 
   insert(clause: IndexedClause): void {
-    const indexed = this.subsumptionIndex.insert(clause);
-    this.passive.ageQueue.insert(indexed, indexed.age);
-    this.passive.heuristicQueue.insert(indexed, indexed.atoms.length);
+    this.subsumptionIndex.insert(clause);
+    const complexity = clauseComplexity(clause);
+    this.passive.ageQueue.insert(clause, clause.age);
+    this.passive.heuristicQueue.insert(clause, complexity);
+
+    debugLogger.logClause(
+      LogComponent.CLAUSE_MGMT,
+      LogLevel.DEBUG,
+      `Inserted clause into passive set (age-priority: ${clause.age}, heuristic-priority: ${complexity})`,
+      clause,
+      () => renderClause(clause, this.st)
+    );
   }
 
   activate(clause: IndexedClause): void {
     clause.noLongerPassive = true; // soft-delete from queues
     this.active.add(clause);
+
+    debugLogger.logClause(
+      LogComponent.CLAUSE_MGMT,
+      LogLevel.DEBUG,
+      `Activated clause (now ${this.active.size} active clauses)`,
+      clause,
+      () => renderClause(clause, this.st)
+    );
   }
 
   remove(clause: IndexedClause): void {
@@ -233,20 +384,100 @@ export class ClauseSet {
   generateResolvents(clause: IndexedClause): IndexedClause[] {
     const resolvents: IndexedClause[] = [];
 
+    debugLogger.trace(
+      LogComponent.RESOLUTION,
+      `Generating SOS-filtered resolvents for clause #${clause.id} against ${this.active.size} active clauses`
+    );
+
     for (const activeClause of this.active) {
       if (activeClause.id === clause.id) continue;
+      // if (!clause.sos && !activeClause.sos) continue;
 
-      // TODO: add factoring/simplification/tautology detection too
-
+      const isSos = clause.sos || activeClause.sos;
       const resolutions = getResolutions(clause, activeClause);
       for (const resolution of resolutions) {
         const resolvent = applyResolution(resolution);
-        const indexed = this.subsumptionIndex.insert(resolvent);
+
+        // Skip tautologies
+        if (isTautology(resolvent)) {
+          debugLogger.debug(
+            LogComponent.RESOLUTION,
+            `Skipping tautology from #${clause.id}[${resolution.leftIdx}] and #${activeClause.id}[${resolution.rightIdx}]`
+          );
+          continue;
+        }
+
+        debugLogger.debug(
+          LogComponent.RESOLUTION,
+          `Resolving #${clause.id}[${resolution.leftIdx}] "${renderClause(clause, this.st)}" with #${activeClause.id}[${resolution.rightIdx}] "${renderClause(activeClause, this.st)}${isSos ? '' : ' NOT SOS, IGNORED'}"`
+        );
+
+        const indexed = this.subsumptionIndex.index(resolvent);
+        indexed.fromParents = [clause.id, activeClause.id];
         resolvents.push(indexed);
+
+        debugLogger.logClause(
+          LogComponent.RESOLUTION,
+          LogLevel.TRACE,
+          `Generated resolvent`,
+          indexed,
+          () => renderClause(indexed, this.st)
+        );
       }
     }
 
+    if (resolvents.length > 0) {
+      debugLogger.debug(
+        LogComponent.RESOLUTION,
+        `Generated ${resolvents.length} resolvents from clause #${clause.id}`
+      );
+    }
+
     return resolvents;
+  }
+
+  /**
+   * Generate all factors of the given clause by unifying literals with same polarity.
+   */
+  generateFactors(clause: IndexedClause): IndexedClause[] {
+    const factors = getFactors(clause);
+    const indexedFactors: IndexedClause[] = [];
+
+    debugLogger.trace(
+      LogComponent.FACTORING,
+      `Generating factors for clause #${clause.id}`
+    );
+
+    for (const factor of factors) {
+      const factored = applyFactor(factor);
+
+      // Skip tautologies
+      if (isTautology(factored)) {
+        debugLogger.debug(
+          LogComponent.FACTORING,
+          `Skipping tautological factor from #${clause.id}[${factor.idx1},${factor.idx2}]`
+        );
+        continue;
+      }
+
+      const indexed = this.subsumptionIndex.index(factored);
+      indexed.fromParents = [clause.id];
+      indexedFactors.push(indexed);
+
+      debugLogger.debug(
+        LogComponent.FACTORING,
+        `Generated factor #${indexed.id} "${renderClause(indexed, this.st)}" from clause #${clause.id} "${renderClause(clause, this.st)}"`
+      );
+    }
+
+    if (indexedFactors.length > 0) {
+      debugLogger.debug(
+        LogComponent.FACTORING,
+        `Generated ${indexedFactors.length} factors from clause #${clause.id}`
+      );
+    }
+
+    return indexedFactors;
   }
 
   getSubsumptionIndex(): SubsumptionIndex {

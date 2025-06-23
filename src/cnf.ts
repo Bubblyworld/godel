@@ -179,7 +179,7 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
   const mappings: Map<number, Term> = new Map();
   const transformVar = (f: Term & { kind: NodeKind.Var }) => {
     if (mappings.has(f.idx)) {
-      return mappings.get(f.idx)!;
+      return mappings.get(f.idx);
     }
     return f;
   };
@@ -256,7 +256,7 @@ export function freshenQuantifiers(
   const mappings: Map<number, number> = new Map();
   const transformVar = (f: Term & { kind: NodeKind.Var }) => ({
     ...f,
-    idx: mappings.has(f.idx) ? mappings.get(f.idx)! : f.idx,
+    idx: mappings.has(f.idx) ? mappings.get(f.idx) : f.idx,
   });
 
   const visited: Set<number | string> = new Set();
@@ -269,7 +269,7 @@ export function freshenQuantifiers(
     const maps: [number, number][] = [];
     for (const idx of f.vars) {
       const node = resolve(SymbolKind.Var, idx, st);
-      const key = byName ? node.symbol.description! : node.idx;
+      const key = byName ? node.symbol.description : node.idx;
 
       if (visited.has(key)) {
         const sym = Symbol(`${node.symbol.description}${freshenCounter++}`);
