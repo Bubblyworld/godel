@@ -97,9 +97,6 @@ class DebugLogger {
     if (clause.priority !== undefined) {
       message += ` (priority: ${clause.priority.toFixed(2)})`;
     }
-    if (clause.fromParents !== undefined && clause.fromParents.length > 0) {
-      message += ` [from: ${clause.fromParents.join(', ')}]`;
-    }
     if (renderFn) {
       message += `: ${renderFn()}`;
     }

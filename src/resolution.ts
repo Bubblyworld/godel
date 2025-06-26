@@ -23,6 +23,11 @@ export type Clause = {
    * goal or some descended resolvent of it.
    */
   sos: boolean;
+
+  /**
+   * Clause that this was factored from, if created as a result of factoring.
+   */
+  factoredFrom?: Clause;
 };
 
 /**
@@ -272,6 +277,7 @@ export function applyFactor(factor: Factor): Clause {
     atoms: cleaned.atoms,
     negated: cleaned.negated,
     sos: clause.sos,
+    factoredFrom: clause,
   };
 }
 

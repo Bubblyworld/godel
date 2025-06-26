@@ -7,7 +7,6 @@ import {
   Clause,
   getFactors,
   applyFactor,
-  isVariableOnlySubstitution,
 } from './resolution';
 import { debugLogger, LogComponent, LogLevel } from './debug-logger';
 
@@ -44,7 +43,7 @@ function termSize(term: Term): number {
  * of atoms and the complexity of terms within those atoms. This helps
  * penalize clauses with deeply nested function applications (like S(S(S(...)))).
  */
-function clauseComplexity(clause: IndexedClause): number {
+export function clauseComplexity(clause: IndexedClause): number {
   let totalDepth = 0;
   let totalSize = 0;
   const atomCount = clause.atoms.length;
@@ -200,7 +199,7 @@ export class PriorityQueue<T> {
   }
 
   private bubbleDown(index: number): void {
-    while (true) {
+    for (;;) {
       let minIndex = index;
       const leftChild = 2 * index + 1;
       const rightChild = 2 * index + 2;
@@ -413,7 +412,6 @@ export class ClauseSet {
         );
 
         const indexed = this.subsumptionIndex.index(resolvent);
-        indexed.fromParents = [clause.id, activeClause.id];
         resolvents.push(indexed);
 
         debugLogger.logClause(
@@ -437,7 +435,8 @@ export class ClauseSet {
   }
 
   /**
-   * Generate all factors of the given clause by unifying literals with same polarity.
+   * Generate all factors of the given clause by unifying literals with same
+   * polarity.
    */
   generateFactors(clause: IndexedClause): IndexedClause[] {
     const factors = getFactors(clause);
@@ -450,8 +449,6 @@ export class ClauseSet {
 
     for (const factor of factors) {
       const factored = applyFactor(factor);
-
-      // Skip tautologies
       if (isTautology(factored)) {
         debugLogger.debug(
           LogComponent.FACTORING,
@@ -461,7 +458,6 @@ export class ClauseSet {
       }
 
       const indexed = this.subsumptionIndex.index(factored);
-      indexed.fromParents = [clause.id];
       indexedFactors.push(indexed);
 
       debugLogger.debug(
@@ -524,5 +520,34 @@ export class ClauseSet {
       this.passive.ageQueue.size(),
       this.passive.heuristicQueue.size()
     );
+  }
+
+  /**
+   * Get all passive clauses sorted by complexity (smallest to highest).
+   * Filters out soft-deleted clauses.
+   */
+  getPassiveClausesSorted(): IndexedClause[] {
+    const passiveClauses: IndexedClause[] = [];
+    const seen = new Set<number>();
+
+    const collectFromQueue = (queue: PriorityQueue<IndexedClause>) => {
+      const queueWithHeap = queue as any;
+      for (const entry of queueWithHeap.heap) {
+        const clause = entry.item;
+        if (!clause.noLongerPassive && !seen.has(clause.id)) {
+          seen.add(clause.id);
+          passiveClauses.push(clause);
+        }
+      }
+    };
+
+    collectFromQueue(this.passive.ageQueue);
+    collectFromQueue(this.passive.heuristicQueue);
+
+    return passiveClauses.sort((a, b) => {
+      const complexityA = clauseComplexity(a);
+      const complexityB = clauseComplexity(b);
+      return complexityA - complexityB;
+    });
   }
 }
