@@ -32,7 +32,6 @@ export interface IndexedClause extends Clause {
   id: number;
   noLongerPassive?: boolean;
   age: number;
-  fromParents?: number[];
 }
 
 export const MISC_HAS_EQUALITY = 1 << 0;
@@ -136,7 +135,7 @@ function termDepth(term: Term): number {
   }
 }
 
-function isGroundTerm(term: Term): boolean {
+export function isGroundTerm(term: Term): boolean {
   switch (term.kind) {
     case NodeKind.Var:
       return false;

@@ -32,20 +32,22 @@ describe('prover', () => {
     const st = createSymbolTable();
     const theory = [parseFormula('P', st)];
     const goal = parseFormula('Q', st);
-    assert.isFalse(proves(theory, goal, st, {
-      maxActiveClauses: 30,
-    })); // limit iterations
+    assert.isFalse(
+      proves(theory, goal, st, {
+        maxActiveClauses: 30,
+      })
+    ); // limit iterations
   });
 
   it('should prove a theorem requiring the use of factoring', () => {
     const st = createSymbolTable();
-    const theory = [
-      parseFormula('P(x) | P(y)', st),
-    ];
+    const theory = [parseFormula('P(x) | P(y)', st)];
     const goal = parseFormula('!(!P(a) | !P(b))', st);
-    assert.isTrue(proves(theory, goal, st, {
-      maxActiveClauses: 30,
-    })); // limit iterations
+    assert.isTrue(
+      proves(theory, goal, st, {
+        maxActiveClauses: 30,
+      })
+    ); // limit iterations
   });
 
   it('should prove a harder theorem requiring the use of factoring', () => {
@@ -55,8 +57,10 @@ describe('prover', () => {
       parseFormula('!P(v) | P(f(w))', st),
     ];
     const goal = parseFormula('!(!P(x) | !P(f(x)))', st);
-    assert.isTrue(proves(theory, goal, st, {
-      maxActiveClauses: 30,
-    })); // limit iterations
+    assert.isTrue(
+      proves(theory, goal, st, {
+        maxActiveClauses: 30,
+      })
+    ); // limit iterations
   });
 });

@@ -63,7 +63,7 @@ export function clauseComplexity(clause: IndexedClause): number {
   // The weights can be tuned based on performance
   const avgDepth =
     clause.atoms.length > 0 && totalSize > 0 ? totalDepth / totalSize : 0;
-  return atomCount * 10 + avgDepth * 5 + totalSize;
+  return atomCount * 10 + avgDepth * 10 + totalSize * 5;
 }
 
 /**
@@ -343,6 +343,7 @@ export class ClauseSet {
     return null;
   }
 
+  // TODO: index so we know if we already have clause
   insert(clause: IndexedClause): void {
     this.subsumptionIndex.insert(clause);
     const complexity = clauseComplexity(clause);
@@ -390,9 +391,8 @@ export class ClauseSet {
 
     for (const activeClause of this.active) {
       if (activeClause.id === clause.id) continue;
-      // if (!clause.sos && !activeClause.sos) continue;
+      if (!clause.sos && !activeClause.sos) continue;
 
-      const isSos = clause.sos || activeClause.sos;
       const resolutions = getResolutions(clause, activeClause);
       for (const resolution of resolutions) {
         const resolvent = applyResolution(resolution);
@@ -408,7 +408,7 @@ export class ClauseSet {
 
         debugLogger.debug(
           LogComponent.RESOLUTION,
-          `Resolving #${clause.id}[${resolution.leftIdx}] "${renderClause(clause, this.st)}" with #${activeClause.id}[${resolution.rightIdx}] "${renderClause(activeClause, this.st)}${isSos ? '' : ' NOT SOS, IGNORED'}"`
+          `Resolving #${clause.id}[${resolution.leftIdx}] "${renderClause(clause, this.st)}" with #${activeClause.id}[${resolution.rightIdx}] "${renderClause(activeClause, this.st)}"`
         );
 
         const indexed = this.subsumptionIndex.index(resolvent);

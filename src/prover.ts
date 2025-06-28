@@ -30,7 +30,7 @@ export function proves(
   theory: Formula[],
   formula: Formula,
   st: SymbolTable,
-  cfg?: ProverConfig,
+  cfg?: ProverConfig
 ): boolean {
   const clauseSet = new ClauseSet(st);
 
@@ -87,8 +87,7 @@ export function proves(
 
     debugLogger.trace(
       LogComponent.PROVER,
-      `Iteration ${iterations}: passive(${clauseSet.passiveSize()}), active(${
-        clauseSet.activeSize()}`
+      `Iteration ${iterations}: passive(${clauseSet.passiveSize()}), active(${clauseSet.activeSize()}`
     );
 
     const given = clauseSet.selectClause();
@@ -221,7 +220,9 @@ export function proves(
   );
   console.log(`Total active clauses: ${activeClauses.length}`);
   for (const clause of activeClauses) {
-    console.log(`${clause.sos ? '!' : ' '} #${clause.id}: ${renderClause(clause, st)}`);
+    console.log(
+      `${clause.sos ? '!' : ' '} #${clause.id}: ${renderClause(clause, st)}`
+    );
   }
 
   // Print summary of passive clauses sorted by complexity
@@ -229,7 +230,9 @@ export function proves(
   const passiveClauses = clauseSet.getPassiveClausesSorted();
   console.log(`Total passive clauses: ${passiveClauses.length}`);
   for (const clause of passiveClauses) {
-    console.log(`${clause.sos ? '!' : ' '} #${clause.id}: ${renderClause(clause, st)}`);
+    console.log(
+      `${clause.sos ? '!' : ' '} #${clause.id}: ${renderClause(clause, st)}`
+    );
   }
 
   return false;

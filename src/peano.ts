@@ -14,7 +14,7 @@ import { parseFormula } from './parse';
  * Returns the axioms and symbols of Peano Arithmetic.
  * TODO: axiom schema of induction
  */
-export function peanoArithmetic(): {
+export function peanoArithmetic(st?: SymbolTable): {
   st: SymbolTable;
   axioms: Formula[];
   zero: ConstSymbol;
@@ -22,7 +22,7 @@ export function peanoArithmetic(): {
   plus: FunSymbol;
   times: FunSymbol;
 } {
-  const st = createSymbolTable();
+  st ??= createSymbolTable();
   const equals = add(st, SymbolKind.Rel, Symbol('='), 2);
   const plus = add(st, SymbolKind.Fun, Symbol('+'), 2);
   const times = add(st, SymbolKind.Fun, Symbol('*'), 2);

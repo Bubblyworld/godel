@@ -150,7 +150,7 @@ export function distributeOrOverAnd(f: Formula): Formula {
             },
           };
         }
-        // No distribution needed, just transform children
+
         return {
           kind: NodeKind.Or,
           left: transform(f.left, cbs),
@@ -204,7 +204,7 @@ export function skolemizeExistentials(f: Formula, st: SymbolTable): Formula {
     } else {
       const maps: [number, Term][] = [];
       for (const idx of f.vars) {
-        const sym = Symbol(`F${skolemCounter++}`);
+        const sym = Symbol(`c${skolemCounter++}`);
 
         if (scope.length === 0) {
           const constEntry = add(st, SymbolKind.Const, sym);
@@ -420,8 +420,8 @@ export function toCNF(f: Formula, st: SymbolTable): Formula {
   f = pushNegationsDown(f);
   f = removeDoubleNegations(f);
   f = freshenQuantifiers(f, st, true);
-  f = moveQuantifiersOutside(f);
   f = skolemizeExistentials(f, st);
+  f = moveQuantifiersOutside(f);
   f = distributeOrOverAnd(f);
   f = removeLeadingUniversals(f);
   return f;

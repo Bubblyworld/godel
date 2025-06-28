@@ -26,6 +26,9 @@ export type FunApp = { kind: NodeKind.FunApp; idx: number; args: Term[] };
 /** Atomic formula with relation symbol index and argument terms. */
 export type Atom = { kind: NodeKind.Atom; idx: number; args: Term[] };
 
+/** An atom or its negation. */
+export type Literal = Atom | { kind: NodeKind.Not; arg: Atom };
+
 /** Negation of a formula. */
 export type Not = { kind: NodeKind.Not; arg: Formula };
 
